@@ -23,10 +23,11 @@
 - [确认运行地区与实时语音 API 可用性](issues/09-confirm-api-region-and-access.md) — 应用必须在中国大陆网络运行，且无 OpenAI API 账号；OpenAI Realtime 不作为主路径，架构选定前须完成国内方案调研。
 - [中国大陆实时语音主路径](issues/10-research-mainland-realtime-voice.md) — 采用百炼 Qwen3.5-Omni-Flash-Realtime（北京）+ 浏览器 WebRTC + Node.js SDP 鉴权代理；组合式 ASR→Qwen→TTS 为降级路径，火山 RTC 仅作跨厂商备选。
 - [选定 MVP 架构与技术栈](issues/07-select-architecture.md) — 采用 Next.js/TypeScript 单体、百炼 WebRTC、Drizzle/SQLite 和五个深模块；供应商适配隔离在 RealtimeVoice seam 后。
+- [编写并确认 MVP 设计规格](issues/08-write-approved-mvp-spec.md) — 已整合全部产品与技术决策，完成自检并获得用户明确批准，可转入实现计划。
 
 ## Not yet specified
 
-- 百炼主路径需在实现计划前置 spike 中完成一轮 50 分钟国内真实网络 PoC，实测长连接/续接、中英技术词最终转写、首音延迟、打断停止延迟和单场成本；VAD 未达标时降级为手动结束回答，端到端整体未达标时切换同厂商组合链路。
+- 百炼主路径需在实现计划前置 spike 中完成一轮 50 分钟国内真实网络 PoC，实测长连接/续接、中英技术词最终转写、首音延迟、打断停止延迟和单场成本；Flash 原生上下文不足以覆盖 45 分钟，应用维护并重注入面试进度摘要；“结束回答”仅以短暂静音辅助服务端 VAD，仍不可靠时切换同厂商组合链路。
 
 ## Out of scope
 

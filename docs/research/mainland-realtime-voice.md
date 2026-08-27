@@ -23,13 +23,15 @@
 | 候选人转写 | `conversation.item.input_audio_transcription.*` | ASR 最终结果直接保存 |
 | AI 转写 | `response.audio_transcript.*` | LLM 原始文本直接保存 |
 | 密钥保护 | Node.js 代理 SDP；长期 Key 不进浏览器 | 全部云调用都在 Node.js |
-| 45 分钟 | 官方实时音频能力表列出 2 小时音频上限；单一 WebRTC 连接仍须实测 | Fun-ASR 实时音频标为不限；应用自行维护会话 |
+| 45 分钟 | 单连接最长 120 分钟，但 Flash 上下文只保留最多 80 个音频轮次/480 秒音频；应用必须维护面试进度摘要 | Fun-ASR 实时音频标为不限；应用自行维护会话 |
 | 实现复杂度 | 低到中 | 中到高 |
 | 可控性 | 端到端自然，但内部阶段不可独立调参 | 每段可调，面试规则和文本更容易审计 |
 
 阿里云的事件参考明确区分候选人最终输入转写与 AI 音频转写，满足只保存双方最终文字的历史模型；`semantic_vad` 还可过滤“嗯、啊”等无意义声音，降低错误打断概率。[Realtime 客户端事件](https://help.aliyun.com/zh/model-studio/client-events)、[Realtime 服务端事件](https://help.aliyun.com/zh/model-studio/server-events)
 
-官方语音模型页把 `qwen3.5-omni-plus-realtime` 的实时音频最大时长列为 2 小时，覆盖 45 分钟业务长度；但 Realtime 产品页没有单独承诺“一条 WebRTC 连接可稳定保持 45 分钟”，因此不能仅凭该字段跳过长连接验证。[语音识别模型能力表](https://help.aliyun.com/zh/model-studio/asr-model/)
+官方 Realtime 文档说明单次连接最长可保持 120 分钟；但 `qwen3.5-omni-flash-realtime` 的上下文上限还包括最多 80 个音频轮次和 480 秒音频，超出后较早历史会被丢弃。因此 45 分钟面试不能只依赖模型原生上下文：应用需要周期性维护并重新注入“已覆盖主题、关键证据、待追问项和当前阶段”的紧凑进度摘要，同时仍需用 50 分钟真实网络测试验证连接稳定性。[Qwen-Omni-Realtime 使用文档](https://help.aliyun.com/zh/model-studio/realtime)
+
+WebRTC 模式只支持服务端 VAD/semantic VAD，不支持关闭 VAD 后由客户端手动提交音频。“结束回答”只能作为辅助：短暂静音本地麦克风，制造明确静音段以帮助服务端结束当前轮次；它不能被描述为绕过 VAD 的手动提交。若真实 PoC 仍无法可靠断句，则切换到应用自行控制轮次边界的组合链路。[Qwen-Omni-Realtime 使用文档](https://help.aliyun.com/zh/model-studio/realtime)
 
 ## 成本判断
 
