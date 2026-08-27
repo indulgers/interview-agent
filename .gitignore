@@ -1,0 +1,12 @@
+node_modules/
+.next/
+.env
+.env.*
+!.env.example
+.superpowers/
+*.db
+*.db-shm
+*.db-wal
+test-results/
+playwright-report/
+coverage/
