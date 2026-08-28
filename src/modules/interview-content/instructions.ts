@@ -11,14 +11,14 @@ function compactText(value: string): string {
 }
 
 function boundedList(values: string[], maxLength = MAX_LEDGER_TEXT): string[] {
-  return values.slice(0, MAX_LEDGER_ITEMS).map((value) => compactText(value).slice(0, maxLength));
+  return values.slice(-MAX_LEDGER_ITEMS).map((value) => compactText(value).slice(0, maxLength));
 }
 
 function compactLedger(progress: InterviewProgress): string {
   const ledger = {
     phase: INTERVIEW_PHASES.has(progress.phase) ? progress.phase : 'intro',
     coveredTopics: boundedList(progress.coveredTopics),
-    evidence: progress.evidence.slice(0, MAX_LEDGER_ITEMS).map((item) => ({
+    evidence: progress.evidence.slice(-MAX_LEDGER_ITEMS).map((item) => ({
       claim: compactText(item.claim),
       observation: compactText(item.observation),
       turnIds: boundedList(item.turnIds, MAX_TURN_ID_LENGTH),

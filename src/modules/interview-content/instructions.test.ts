@@ -83,4 +83,26 @@ describe('buildRealtimeInstructions', () => {
     expect(ledger.evidence.every((item) => item.claim.length <= 160 && item.observation.length <= 160)).toBe(true);
     expect(ledger.evidence.every((item) => item.turnIds.length === 8 && item.turnIds.every((id) => id.length <= 64))).toBe(true);
   });
+
+  it('retains the newest eight ordered topics, evidence, and follow-ups during compaction', () => {
+    const progress = {
+      phase: 'agent' as const,
+      coveredTopics: Array.from({ length: 10 }, (_, index) => `topic-${index}`),
+      evidence: Array.from({ length: 10 }, (_, index) => ({
+        claim: `claim-${index}`,
+        observation: `observation-${index}`,
+        turnIds: [`turn-${index}`],
+      })),
+      pendingFollowUps: Array.from({ length: 10 }, (_, index) => `follow-up-${index}`),
+      updatedThroughSequence: 10,
+    };
+
+    const instructions = buildRealtimeInstructions(createContentSnapshot(), progress);
+    const payload = instructions.match(/<progress-ledger>([\s\S]*?)<\/progress-ledger>/)?.[1];
+    const ledger = JSON.parse(payload as string) as typeof progress;
+
+    expect(ledger.coveredTopics).toEqual(['topic-2', 'topic-3', 'topic-4', 'topic-5', 'topic-6', 'topic-7', 'topic-8', 'topic-9']);
+    expect(ledger.evidence.map((item) => item.claim)).toEqual(['claim-2', 'claim-3', 'claim-4', 'claim-5', 'claim-6', 'claim-7', 'claim-8', 'claim-9']);
+    expect(ledger.pendingFollowUps).toEqual(['follow-up-2', 'follow-up-3', 'follow-up-4', 'follow-up-5', 'follow-up-6', 'follow-up-7', 'follow-up-8', 'follow-up-9']);
+  });
 });
