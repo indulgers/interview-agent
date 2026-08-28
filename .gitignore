@@ -1,12 +1,12 @@
 node_modules/
 .next/
-.env
-.env.*
+.env*
 !.env.example
 .superpowers/
 *.db
 *.db-shm
 *.db-wal
+*.tsbuildinfo
 test-results/
 playwright-report/
 coverage/

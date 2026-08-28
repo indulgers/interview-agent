@@ -1,0 +1,148 @@
+@import 'tailwindcss';
+
+:root {
+  --paper: #f6f2ea;
+  --ink: #17231d;
+  --muted: #59645d;
+  --line: #d9d4c9;
+  --accent: #177a5b;
+  --accent-dark: #0f5942;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--paper);
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  color: var(--ink);
+  font-family: Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+}
+
+a {
+  color: inherit;
+}
+
+.home-shell {
+  width: min(100% - 3rem, 72rem);
+  margin: 0 auto;
+  padding: 1.5rem 0 5rem;
+}
+
+.home-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 0 1.5rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.95rem;
+}
+
+.brand {
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.home-nav a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.home-nav a:hover {
+  color: var(--accent-dark);
+}
+
+.hero {
+  max-width: 48rem;
+  padding: 8rem 0 5rem;
+}
+
+.eyebrow {
+  margin: 0 0 1rem;
+  color: var(--accent-dark);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+h1,
+h2,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  max-width: 42rem;
+  margin-bottom: 1.5rem;
+  font-family: Georgia, 'Songti SC', 'SimSun', serif;
+  font-size: clamp(2.8rem, 7vw, 5.6rem);
+  font-weight: 500;
+  letter-spacing: -0.06em;
+  line-height: 1.02;
+}
+
+.intro {
+  max-width: 38rem;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.8;
+}
+
+.primary-action {
+  display: inline-flex;
+  margin-top: 1.5rem;
+  padding: 0.9rem 1.2rem;
+  background: var(--accent);
+  color: white;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background-color 160ms ease;
+}
+
+.primary-action:hover {
+  background: var(--accent-dark);
+}
+
+.session-note {
+  display: flex;
+  gap: 1.25rem;
+  padding: 1.25rem 0;
+  border-block: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.history-placeholder {
+  padding: 5rem 0;
+}
+
+.history-placeholder h2 {
+  margin-bottom: 0.75rem;
+  font-family: Georgia, 'Songti SC', 'SimSun', serif;
+  font-size: 2.2rem;
+  font-weight: 500;
+}
+
+.history-placeholder p:last-child {
+  color: var(--muted);
+}
+
+@media (max-width: 640px) {
+  .home-shell {
+    width: min(100% - 2rem, 72rem);
+  }
+
+  .hero {
+    padding: 5rem 0 3.5rem;
+  }
+
+  .session-note {
+    gap: 0.8rem;
+    font-size: 0.8rem;
+  }
+}
