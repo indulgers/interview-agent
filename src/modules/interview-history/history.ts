@@ -170,6 +170,7 @@ export function createInterviewHistory(db: AppDatabase): InterviewHistory {
     },
 
     async finish(id: SessionId, result: Exclude<SessionResult, 'in_progress'>, completeness: TranscriptCompleteness, actualDurationMs: number): Promise<void> {
+      nonempty(id, '会话 ID');
       if (!terminal(result)) throw new Error('非法的会话结果');
       if (completeness !== 'complete' && completeness !== 'missing') throw new Error('非法的转写完整性');
       if (!Number.isSafeInteger(actualDurationMs) || actualDurationMs < 0 || actualDurationMs > 7 * 24 * 60 * 60_000) throw new Error('实际面试时长必须为非负安全整数');
@@ -193,6 +194,7 @@ export function createInterviewHistory(db: AppDatabase): InterviewHistory {
     },
 
     async setFeedback(id: SessionId, update: FeedbackUpdate): Promise<void> {
+      nonempty(id, '会话 ID');
       const status = update.status;
       if (!['pending', 'generating', 'completed', 'failed', 'not_applicable'].includes(status)) throw new Error('非法的反馈状态');
       const resultJson = update.result === undefined ? undefined : JSON.stringify(update.result);
@@ -238,6 +240,7 @@ export function createInterviewHistory(db: AppDatabase): InterviewHistory {
     },
 
     async detail(id: SessionId): Promise<SessionDetail | null> {
+      nonempty(id, '会话 ID');
       const session = db.select().from(interviewSessions).where(eq(interviewSessions.id, id)).get();
       if (!session) return null;
       const snapshotRow = db.select().from(contentSnapshots).where(eq(contentSnapshots.sessionId, id)).get();

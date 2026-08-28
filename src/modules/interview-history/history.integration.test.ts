@@ -62,6 +62,9 @@ describe('InterviewHistory', () => {
     await expect(history.finish(id, 'completed', 'complete', -1)).rejects.toThrow();
     await expect(history.finish(id, 'completed', 'bogus' as never, 1)).rejects.toThrow();
     await expect(history.delete('   ')).rejects.toThrow();
+    await expect(history.detail('   ')).rejects.toThrow('会话 ID不能为空');
+    await expect(history.finish('   ', 'completed', 'complete', 1)).rejects.toThrow('会话 ID不能为空');
+    await expect(history.setFeedback('   ', { status: 'generating' })).rejects.toThrow('会话 ID不能为空');
     await expect(history.appendFinalTurn({ sessionId: id, providerTurnId: 'bad-speaker', sequence: 1, speaker: 'other' as never, text: 'x', startedAt: 3, endedAt: 4 })).rejects.toThrow();
   });
 
