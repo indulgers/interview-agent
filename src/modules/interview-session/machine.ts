@@ -66,6 +66,7 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
   let finalizing = false;
   let progress = createInitialProgress();
   let responseHint = false;
+  let currentQuestion: string | null = null;
   let retried = false;
   let allowNewTopics = true;
   let epoch = 0;
@@ -128,6 +129,7 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
     activeDurationMs: elapsed(),
     allowNewTopics,
     responseHint,
+    currentQuestion,
     error,
   });
 
@@ -371,6 +373,7 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
             text: event.text,
             providerTurnId: event.providerTurnId,
           });
+          if (event.speaker === 'ai') currentQuestion = event.text;
           pendingTurns.delete(event.providerTurnId);
           if (sequence % 10 === 0) await inject();
         }

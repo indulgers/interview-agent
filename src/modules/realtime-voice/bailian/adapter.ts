@@ -110,10 +110,12 @@ export class BailianRealtimeVoice implements RealtimeVoice {
 }
 
 /** Creates the production browser boundary; tests should inject their own boundaries instead. */
-export function createBrowserBailianRealtimeVoice(voice = 'Tina') {
+export function createBrowserBailianRealtimeVoice(voice = 'Tina', mediaStream?: MediaStream) {
   return new BailianRealtimeVoice({
     createPeerConnection: () => new RTCPeerConnection() as unknown as BailianPeerConnection,
-    getUserMedia: (constraints) => navigator.mediaDevices.getUserMedia(constraints) as unknown as Promise<BailianMediaStream>,
+    getUserMedia: (constraints) => mediaStream
+      ? Promise.resolve(mediaStream as unknown as BailianMediaStream)
+      : navigator.mediaDevices.getUserMedia(constraints) as unknown as Promise<BailianMediaStream>,
     fetch: async (input, init) => window.fetch(input, init),
     createAudioElement: () => {
       const audio = document.createElement('audio');

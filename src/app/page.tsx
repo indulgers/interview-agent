@@ -12,7 +12,7 @@ export default function HomePage() {
         <p className="intro">
           进行一场 45 分钟的中文模拟面试。AI 面试官会围绕项目经历、全栈能力与 Agent 实践持续追问。
         </p>
-        <a className="primary-action" href="#start">
+        <a className="primary-action" href="/interview">
           开始模拟面试
         </a>
       </section>

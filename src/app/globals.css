@@ -146,3 +146,71 @@ h1 {
     font-size: 0.8rem;
   }
 }
+
+.device-shell,
+.interview-shell {
+  --studio: #071319;
+  --studio-panel: #0d2028;
+  --studio-line: #25414c;
+  --studio-text: #e8f1f3;
+  --studio-muted: #91a8b0;
+  --studio-live: #f0a947;
+  min-height: 100vh;
+  background: var(--studio);
+  color: var(--studio-text);
+  font-family: Inter, Arial, 'PingFang SC', sans-serif;
+}
+
+.device-shell { display: grid; place-items: center; padding: 2rem; background-image: radial-gradient(circle at 70% 20%, #16333d 0, transparent 35%); }
+.device-card { width: min(100%, 56rem); padding: clamp(2rem, 6vw, 5rem); border: 1px solid var(--studio-line); background: color-mix(in srgb, var(--studio-panel) 88%, transparent); }
+.room-kicker, .room-brand { color: var(--studio-live); font: 700 .72rem/1.2 ui-monospace, SFMono-Regular, monospace; letter-spacing: .16em; }
+.device-card h1 { max-width: 42rem; margin: 1.25rem 0; font-family: 'Songti SC', Georgia, serif; font-size: clamp(2.4rem, 6vw, 4.8rem); letter-spacing: -.045em; }
+.device-copy { max-width: 38rem; color: var(--studio-muted); font-size: 1.08rem; line-height: 1.8; }
+.device-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin: 2.5rem 0 1rem; background: var(--studio-line); border: 1px solid var(--studio-line); }
+.device-grid span { padding: 1rem; background: var(--studio-panel); font-size: .88rem; }
+.privacy-note { color: var(--studio-muted); font-size: .8rem; }
+.device-error { color: #ffc1b8; }
+.device-actions { display: flex; gap: .75rem; margin-top: 2rem; }
+.device-actions button, .room-controls button, .end-confirm button { border: 1px solid var(--studio-line); padding: .85rem 1rem; background: transparent; color: inherit; font-weight: 700; cursor: pointer; }
+.device-actions button:focus-visible, .room-controls button:focus-visible, .end-confirm button:focus-visible { outline: 3px solid var(--studio-live); outline-offset: 3px; }
+.device-actions button:disabled { cursor: not-allowed; opacity: .38; }
+.device-actions .start-interview { background: var(--studio-live); color: #182127; border-color: var(--studio-live); }
+
+.interview-shell { display: grid; grid-template-rows: auto 1fr auto; padding: 1.25rem; overflow: hidden; }
+.room-header { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: .25rem .5rem 1rem; border-bottom: 1px solid var(--studio-line); }
+.room-header time { font: 600 1rem ui-monospace, SFMono-Regular, monospace; }
+.room-header time small { color: var(--studio-muted); }
+.recording-dot { justify-self: end; color: var(--studio-live); font: 700 .72rem ui-monospace, monospace; letter-spacing: .12em; }
+.recording-dot::before { content: ''; display: inline-block; width: .55rem; height: .55rem; margin-right: .45rem; border-radius: 50%; background: var(--studio-live); box-shadow: 0 0 0 .35rem #f0a94718; }
+.interviewer-frame { position: relative; display: grid; place-items: center; min-height: 0; }
+.avatar-stage { position: relative; display: grid; place-items: center; width: min(48vh, 25rem); aspect-ratio: 1; }
+.avatar-face { position: relative; width: 72%; border-radius: 50%; filter: saturate(.8); z-index: 1; }
+.voice-orbit { position: absolute; inset: 4%; border: 1px solid #4f7581; border-radius: 50%; box-shadow: 0 0 80px #5ca0b21c, inset 0 0 40px #5ca0b214; }
+.is-speaking .voice-orbit { border-color: var(--studio-live); animation: voice-pulse 900ms ease-in-out infinite alternate; }
+.avatar-name { position: absolute; bottom: 2%; z-index: 2; padding: .5rem .75rem; background: #071319dd; color: var(--studio-muted); font-size: .78rem; letter-spacing: .08em; }
+.state-overlay { position: absolute; left: 2rem; bottom: 2rem; display: grid; gap: .35rem; max-width: 24rem; }
+.state-overlay span { font-family: 'Songti SC', Georgia, serif; font-size: clamp(1.5rem, 3vw, 2.6rem); }
+.state-overlay q { max-width: 32rem; color: var(--studio-muted); font-size: .9rem; line-height: 1.55; }
+.state-overlay small { color: var(--studio-muted); }
+.candidate-pip { position: absolute; right: 1.5rem; bottom: 1.5rem; width: min(24vw, 14rem); aspect-ratio: 4/3; overflow: hidden; border: 1px solid var(--studio-line); background: #10252d; }
+.candidate-pip video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.candidate-pip span { position: absolute; inset: auto 0 0; padding: .45rem .55rem; background: #071319cc; color: var(--studio-muted); font-size: .68rem; }
+.room-error { position: absolute; top: 1.5rem; display: flex; gap: 1rem; align-items: center; padding: .75rem 1rem; border: 1px solid #844f4b; background: #271b1bdd; color: #ffc1b8; }
+.room-error button { border: 1px solid #ffc1b8; padding: .45rem .7rem; background: transparent; color: inherit; }
+.room-controls { display: flex; justify-content: center; gap: .6rem; padding-top: 1rem; border-top: 1px solid var(--studio-line); }
+.room-controls .answer-button { background: #dfecef; color: #102029; }
+.room-controls .end-button, .danger-button { border-color: #844f4b; color: #ffc1b8; }
+.end-confirm { position: fixed; z-index: 5; left: 50%; bottom: 2rem; display: grid; grid-template-columns: 1fr auto auto; gap: .75rem; align-items: center; width: min(calc(100% - 2rem), 48rem); padding: 1rem; transform: translateX(-50%); border: 1px solid #844f4b; background: #15252c; box-shadow: 0 1rem 4rem #0008; }
+.end-confirm span { grid-column: 1; color: var(--studio-muted); font-size: .8rem; }
+@keyframes voice-pulse { to { transform: scale(1.045); box-shadow: 0 0 100px #f0a94735, inset 0 0 50px #f0a94718; } }
+@media (prefers-reduced-motion: reduce) { .is-speaking .voice-orbit { animation: none; border-width: 3px; } }
+@media (max-width: 700px) {
+  .device-grid { grid-template-columns: 1fr; }
+  .device-actions, .room-controls { flex-wrap: wrap; }
+  .interview-shell { padding: .75rem; }
+  .avatar-stage { width: min(70vw, 22rem); }
+  .candidate-pip { right: .25rem; bottom: 1rem; width: 7.5rem; }
+  .state-overlay { left: .25rem; bottom: 1rem; max-width: 55%; }
+  .end-confirm { grid-template-columns: 1fr 1fr; }
+  .end-confirm strong, .end-confirm span { grid-column: 1 / -1; }
+}

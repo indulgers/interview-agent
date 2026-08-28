@@ -12,6 +12,7 @@ export interface InterviewSessionView {
   activeDurationMs: number;
   allowNewTopics: boolean;
   responseHint: boolean;
+  currentQuestion: string | null;
   error: string | null;
 }
 export interface ProgressSummaryInput {
