@@ -29,6 +29,7 @@ describe('POST /api/realtime/session', () => {
   });
 
   it.each([
+    ['missing SDP content type', undefined, 'v=0\r\n'],
     ['missing SDP content type', 'text/plain', 'v=0\r\n'],
     ['SDP-prefix content type', 'application/sdp-anything', 'v=0\r\n'],
     ['non-SDP body', 'application/sdp', 'not an offer'],
@@ -36,10 +37,18 @@ describe('POST /api/realtime/session', () => {
     ['offer oversized in UTF-8 bytes', 'application/sdp', `v=0\r\n${'测'.repeat(22_000)}`],
   ])('rejects %s before contacting the provider', async (_label, contentType, body) => {
     const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
-    const response = await postSession(new Request('http://localhost/api/realtime/session', { method: 'POST', headers: { 'content-type': contentType }, body }), { readEnv: () => env });
+    const response = await postSession(new Request('http://localhost/api/realtime/session', { method: 'POST', headers: contentType ? { 'content-type': contentType } : {}, body }), { readEnv: () => env });
     expect(response.status).toBe(400);
     expect(await response.text()).toBe('无效的 SDP 建连请求。');
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('accepts a text/plain upstream answer when its body is valid SDP', async () => {
+    const response = await postSession(new Request('http://localhost/api/realtime/session', { method: 'POST', headers: { 'content-type': 'application/sdp' }, body: 'v=0\r\n' }), {
+      readEnv: () => env, fetch: vi.fn().mockResolvedValue(new Response('v=0\na=answer\n', { headers: { 'content-type': 'text/plain; charset=utf-8' } })),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('v=0\r\na=answer\r\n');
   });
 
   it('rejects an unsafe workspace identifier before constructing an upstream URL', async () => {

@@ -7,7 +7,8 @@ type FetchResponse = Pick<Response, 'ok' | 'headers' | 'body' | 'text'>;
 type Dependencies = { readEnv?: () => ServerEnv; fetch?: (input: string, init: RequestInit) => Promise<FetchResponse>; timeoutMs?: number };
 
 function safeText(status: number, text: string) { return new Response(text, { status, headers: { 'content-type': 'text/plain; charset=utf-8' } }); }
-function isSdpMime(value: string | null) { return value === null || /^application\/sdp(?:\s*;|$)/i.test(value); }
+function isRequestSdpMime(value: string | null) { return value !== null && /^application\/sdp(?:\s*;|$)/i.test(value); }
+function isAnswerSdpMime(value: string | null) { return value === null || /^(?:application\/sdp|text\/plain)(?:\s*;|$)/i.test(value); }
 function isSdp(value: string) { return /^v=0(?:\r?\n|$)/.test(value); }
 function isWorkspaceId(value: string) { return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(value); }
 function normalizeSdp(value: string) { const normalized = value.trim().replace(/\r?\n/g, '\r\n'); return normalized.endsWith('\r\n') ? normalized : `${normalized}\r\n`; }
@@ -37,7 +38,7 @@ async function timed<T>(operation: (signal: AbortSignal) => Promise<T>, timeoutM
 }
 
 export async function postSession(request: Request, dependencies: Dependencies = {}) {
-  if (!isSdpMime(request.headers.get('content-type'))) return safeText(400, '无效的 SDP 建连请求。');
+  if (!isRequestSdpMime(request.headers.get('content-type'))) return safeText(400, '无效的 SDP 建连请求。');
   let offer: string;
   try { offer = await readBounded(request.body, () => request.text()); } catch { return safeText(400, '无效的 SDP 建连请求。'); }
   if (!isSdp(offer)) return safeText(400, '无效的 SDP 建连请求。');
@@ -48,7 +49,7 @@ export async function postSession(request: Request, dependencies: Dependencies =
       `https://${env.DASHSCOPE_WORKSPACE_ID}.cn-beijing.maas.aliyuncs.com/api/v1/webrtc/realtime?model=${BAILIAN_MODEL}`,
       { method: 'POST', headers: { 'Content-Type': 'application/sdp', Authorization: `Bearer ${env.DASHSCOPE_API_KEY}` }, body: offer, signal },
     ), dependencies.timeoutMs ?? TIMEOUT_MS);
-    if (!response.ok || !isSdpMime(response.headers.get('content-type'))) return safeText(502, '实时语音服务暂时不可用。');
+    if (!response.ok || !isAnswerSdpMime(response.headers.get('content-type'))) return safeText(502, '实时语音服务暂时不可用。');
     const answer = await readBounded(response.body, () => response.text());
     if (!isSdp(answer)) return safeText(502, '实时语音服务暂时不可用。');
     return new Response(normalizeSdp(answer), { status: 200, headers: { 'content-type': 'application/sdp; charset=utf-8' } });

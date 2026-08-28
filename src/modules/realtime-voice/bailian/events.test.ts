@@ -38,29 +38,30 @@ describe('parseBailianEvent', () => {
     ]);
   });
 
-  it('correlates candidate audio timing by item ID and clears it after the final transcript', () => {
+  it('anchors session-relative candidate audio timing to epoch receipt time and clears it after the final transcript', () => {
     const timing = createBailianTiming();
+    parseBailianEvent({ type: 'session.created', session: { object: 'realtime.session', model: 'qwen3.5-omni-flash-realtime' } }, now, timing);
     parseBailianEvent({ type: 'input_audio_buffer.speech_stopped', item_id: 'candidate-1', audio_end_ms: 4453 }, now, timing);
     parseBailianEvent({ type: 'input_audio_buffer.speech_started', item_id: 'candidate-1', audio_start_ms: 3647 }, now, timing);
 
     expect(parseBailianEvent({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'candidate-1', content_index: 0, transcript: '完整回答。' }, now, timing)).toEqual([
-      { type: 'final_turn', providerTurnId: 'candidate-1', speaker: 'candidate', text: '完整回答。', startedAt: 3647, endedAt: 4453 },
+      { type: 'final_turn', providerTurnId: 'candidate-1', speaker: 'candidate', text: '完整回答。', startedAt: now + 3647, endedAt: now + 4453 },
     ]);
     expect(parseBailianEvent({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'candidate-1', content_index: 0, transcript: '不复用旧时间。' }, now, timing)).toEqual([
       { type: 'final_turn', providerTurnId: 'candidate-1', speaker: 'candidate', text: '不复用旧时间。', startedAt: now, endedAt: now },
     ]);
   });
 
-  it('clamps out-of-order timing and uses optional assistant provider timing without negative durations', () => {
+  it('clamps out-of-order timing and uses receipt timing for official assistant transcripts', () => {
     const timing = createBailianTiming();
     parseBailianEvent({ type: 'input_audio_buffer.speech_stopped', item_id: 'candidate-2', audio_end_ms: 200 }, now, timing);
     parseBailianEvent({ type: 'input_audio_buffer.speech_started', item_id: 'candidate-2', audio_start_ms: 800 }, now, timing);
 
     expect(parseBailianEvent({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'candidate-2', content_index: 0, transcript: '乱序。' }, now, timing)[0]).toMatchObject({
-      type: 'final_turn', startedAt: 800, endedAt: 800,
+      type: 'final_turn', startedAt: now, endedAt: now,
     });
-    expect(parseBailianEvent({ type: 'response.audio_transcript.done', response_id: 'resp-1', item_id: 'assistant-1', output_index: 0, content_index: 0, transcript: '请继续。', audio_start_ms: 1200, audio_end_ms: 1350 }, now, timing)).toEqual([
-      { type: 'final_turn', providerTurnId: 'assistant-1', speaker: 'ai', text: '请继续。', startedAt: 1200, endedAt: 1350 },
+    expect(parseBailianEvent({ type: 'response.audio_transcript.done', response_id: 'resp-1', item_id: 'assistant-1', output_index: 0, content_index: 0, transcript: '请继续。' }, now, timing)).toEqual([
+      { type: 'final_turn', providerTurnId: 'assistant-1', speaker: 'ai', text: '请继续。', startedAt: now, endedAt: now },
     ]);
   });
 

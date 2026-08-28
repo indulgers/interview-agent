@@ -36,6 +36,10 @@ Only the credential-gated real 50-minute mainland-network PoC remains. It is del
 
 RED/GREEN: added strict SDP MIME, streamed byte-budget, workspace-label, and upstream Answer validation cases; the route suite is 11/11 GREEN. Adapter contract remains GREEN (5/5) after gating the local track (`enabled=false` plus `replaceTrack(null)`) until inbound `txt` delivers `session.created`; it then configures with the dedicated WebRTC top-level PCM format fields and restores the track. The development spike now closes on unmount and exposes a disconnect control. No live call or credential access occurred.
 
+## Fix round 2 (partial, 2026-08-28)
+
+RED/GREEN: request MIME now requires an explicit exact `application/sdp` media type while Answer MIME accepts valid `application/sdp` or `text/plain` (and an absent MIME) before validating SDP. Provider session-relative candidate millisecond values are anchored to the `session.created` receipt epoch; undocumented assistant transcript timing fields were removed and assistant timing is receipt-based. Focused route/event tests: 22/22 GREEN. No environment files were read or changed.
+
 ## Fix round 2 (2026-08-28)
 
 RED:
