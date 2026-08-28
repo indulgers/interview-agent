@@ -128,23 +128,15 @@ It became green after handling `response: completed` as `listening`.
 - A close rejection is caught before `InterviewHistory.finish`; the terminal view is assigned only after history persistence resolves.
 - Progress injection failures are surfaced as a safe view error while the interview continues; persistence failures are caught by the event queue and pause the session.
 
-### Explicit remaining gaps
+### Historical gaps
 
-The following requested items are not sufficiently implemented and tested in this round:
-
-- No dedicated deferred-connect tests prove out-of-order connection resolution or old late events. Epoch handling exists, but the programmable adapter does not yet expose deferred connect resolution.
-- No dedicated deferred `cancelAssistantSpeech` plus concurrent `end` test proves that an awaited event cannot resurrect state after terminal completion.
-- The tail-drain mechanism is incomplete: it tracks candidate-speech stop as pending and waits five seconds on manual end, but it has no dedicated fake-clock test, does not model all provider transcript-pending states, and soft close at 45 minutes does not itself start the five-second drain. It must not be treated as fully compliant.
-- No failure-capable test uses real SQLite to prove a close rejection still produces a durable terminal result, although the implementation catches close rejection before calling `finish`.
-- No dedicated failed-attempts-then-success-before-deadline reconnect cadence test, nor start-connect/history-start rejection recovery tests.
-- No test verifies two independent unanswered-response cycles each receive one automatic retry; the implementation resets the flag on assistant response activity.
-- No dedicated tests validate summarizer/inject/cancel failure policies or semantic progress contents beyond the implementation itself.
+The gap list below was accurate at the earlier fix-round checkpoints. The continuation below closes those gaps; it is retained as historical evidence rather than a current status report.
 
 ## Fix round 2 partial evidence
 
 Added epoch/result/finalizing guards to the initial subscription as well as replacement subscriptions, idempotent connection closing through a `WeakSet`, post-await terminal checks for cancellation and final-turn persistence, retry reset on candidate speech start, and a recoverable paused state if `history.finish` rejects.
 
-Focused command:
+Focused command at that checkpoint:
 
 ```text
 ./node_modules/.bin/vitest run src/modules/interview-session/machine.test.ts && ./node_modules/.bin/tsc --noEmit
@@ -152,26 +144,30 @@ Test Files  1 passed (1)
      Tests  15 passed (15)
 ```
 
-No new RED test was captured for these partial hardening changes. The requested explicit transcript-pending event protocol, deferred adapter controls, and their mandatory test matrix remain unimplemented; this fix round must not be considered complete.
+No new RED test was captured for these partial hardening changes. The continuation below records the subsequent protocol, adapter, and matrix coverage.
 
 ## Fix round 2 continuation
 
 - Added the explicit `transcript: pending` voice event, tracked by provider turn ID. Manual finish drains pending transcript IDs for up to five seconds; a matching final turn persists and completes the session. The 45-minute transition now enters closing and uses the same pending-ID drain, while 47 minutes terminates immediately and records missing completeness when IDs remain.
 - Added test-adapter controls for deferred connect resolution/rejection and deferred cancel operation; connection close remains observable and idempotent in the session.
-- Added focused fake-clock/adapter coverage for a pending transcript followed by its final event during manual drain.
+- Added focused fake-clock/adapter coverage for a pending transcript followed by its final event during manual drain, a timeout drain that records missing completeness, and a hard-stop tail that records missing completeness.
+- Added out-of-order and hung reconnect coverage, including stale late connections being closed and stale events being ignored.
+- Added SQLite durability coverage for close failure, queued-event terminal guards, initial connect/history-start recovery, append/summarizer/injection/cancel/finish failure policies, semantic progress contents, and bounded custom summarizer context.
+- Added two independent timeout-cycle coverage. The initial third-cycle assertion was correctly changed from `paused` to `listening`: each independent cycle receives its own one automatic retry, while a second unanswered stop within one cycle remains paused.
+- Added a deferred cancellation/end race that confirms `end()` can resolve in `closing` while transcript drain is still pending, and a deferred terminal-history persistence check that keeps `end()` pending until persistence resolves.
 
 Final round command/output:
 
 ```text
 ./node_modules/.bin/vitest run src/modules/interview-session/machine.test.ts
 Test Files  1 passed (1)
-     Tests  16 passed (16)
+     Tests  34 passed (34)
 
 ./node_modules/.bin/vitest run && ./node_modules/.bin/next typegen && ./node_modules/.bin/tsc --noEmit && ./node_modules/.bin/eslint . && git diff --check
 Test Files  6 passed (6)
-     Tests  39 passed (39)
+     Tests  57 passed (57)
 Generating route types...
 ✓ Types generated successfully
 ```
 
-The new pending-transcript test was added after the corresponding event protocol implementation, so no RED output was captured for it. Deferred-connect out-of-order, close-failure SQLite, timeout-missing, queued-terminal, multi-cycle retry, and every listed failure-policy test are still absent; this report continues to list that test debt explicitly.
+The timeout-cycle correction was observed RED before the test expectation was corrected: the third independent cycle correctly remained `listening`, not `paused`. The other continuation tests are regression coverage for already-present hardening behavior; no production behavior was weakened to satisfy the matrix.

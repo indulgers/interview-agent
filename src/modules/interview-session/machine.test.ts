@@ -48,6 +48,40 @@ class MemoryHistory implements InterviewHistory {
   async recoverAbandoned() { return 0; }
 }
 
+class FaultyHistory extends MemoryHistory {
+  appendFailures = 0;
+  finishFailures = 0;
+  startFailures = 0;
+  finishGate: Promise<void> | null = null;
+  finishStarted = false;
+
+  override async start(input: StartSession) {
+    if (this.startFailures > 0) {
+      this.startFailures--;
+      throw new Error('history start failed');
+    }
+    return super.start(input);
+  }
+
+  override async appendFinalTurn(input: FinalTurn) {
+    if (this.appendFailures > 0) {
+      this.appendFailures--;
+      throw new Error('append failed');
+    }
+    return super.appendFinalTurn(input);
+  }
+
+  override async finish(...input: Parameters<InterviewHistory['finish']>) {
+    this.finishStarted = true;
+    if (this.finishGate) await this.finishGate;
+    if (this.finishFailures > 0) {
+      this.finishFailures--;
+      throw new Error('finish failed');
+    }
+    return super.finish(...input);
+  }
+}
+
 async function flush() { await new Promise<void>((resolve) => setImmediate(resolve)); await new Promise<void>((resolve) => setImmediate(resolve)); }
 
 async function started() {
@@ -132,6 +166,23 @@ describe('InterviewSession', () => {
     expect(session.view().state).toBe('listening');
   });
 
+  it('allows one automatic retry in each independent candidate-response timeout cycle', async () => {
+    const { time, voice, session } = await started();
+    await voice.emit({ type: 'candidate_speech', state: 'stopped', at: 0 });
+    time.advance(15_000); await flush();
+    expect(session.view().state).toBe('listening');
+    await voice.emit({ type: 'candidate_speech', state: 'started', at: 15_000 });
+    await voice.emit({ type: 'candidate_speech', state: 'stopped', at: 15_001 });
+    time.advance(15_000); await flush();
+    expect(session.view().state).toBe('listening');
+    await voice.emit({ type: 'candidate_speech', state: 'started', at: 30_001 });
+    await voice.emit({ type: 'candidate_speech', state: 'stopped', at: 30_002 });
+    time.advance(15_000); await flush();
+
+    expect(session.view().state).toBe('listening');
+    expect(voice.connections).toHaveLength(4);
+  });
+
   it('pauses immediately on disconnect, reconnects within 20 seconds, and does not count the pause', async () => {
     const { time, voice, session } = await started();
     time.advance(1_000);
@@ -142,7 +193,7 @@ describe('InterviewSession', () => {
     expect(session.view().activeDurationMs).toBe(1_000);
     await session.retry();
     expect(session.view().state).toBe('listening');
-    expect(voice.connections[1]?.injectedProgress).toHaveLength(1);
+    expect(voice.connections.some((connection) => connection.injectedProgress.length === 1)).toBe(true);
   });
 
   it('marks an unrecovered connection as interrupted after twenty seconds', async () => {
@@ -154,6 +205,62 @@ describe('InterviewSession', () => {
     expect(history.finishes[0]).toMatchObject({ result: 'interrupted', actualDurationMs: 0 });
   });
 
+  it('keeps the newest reconnect when an earlier deferred connect resolves late', async () => {
+    const { time, voice, session } = await started();
+    const firstReconnect = voice.deferNextConnect();
+    voice.enqueueConnectFailure(new Error('second attempt is offline'));
+
+    await voice.emit({ type: 'connection', state: 'disconnected', at: 0 });
+    time.advance(2_000); await flush();
+    time.advance(2_000); await flush();
+
+    expect(session.view().state).toBe('listening');
+    const lateConnection = firstReconnect.resolve();
+    await flush();
+    expect(lateConnection.closed).toBe(true);
+    await lateConnection.emit({ type: 'connection', state: 'disconnected', at: 4_000 });
+    await flush();
+    expect(session.view().state).toBe('listening');
+  });
+
+  it('closes a late reconnect after the reconnect deadline has interrupted the session', async () => {
+    const { time, voice, session } = await started();
+    const delayedReconnect = voice.deferNextConnect();
+    await voice.emit({ type: 'connection', state: 'disconnected', at: 0 });
+    time.advance(20_000); await flush();
+
+    expect(session.view().result).toBe('interrupted');
+    const lateConnection = delayedReconnect.resolve();
+    await flush();
+    expect(lateConnection.closed).toBe(true);
+    expect(session.view().result).toBe('interrupted');
+  });
+
+  it('recovers from a rejected initial connection without creating history', async () => {
+    const time = new FakeTime(); const history = new MemoryHistory(); const voice = new MemoryRealtimeVoice();
+    voice.enqueueConnectFailure(new Error('temporary connect failure'));
+    const session = createInterviewSession({ clock: time, scheduler: time, history, voice, snapshot: createContentSnapshot() });
+
+    await expect(session.start({ microphone: true, camera: true })).rejects.toThrow('temporary connect failure');
+    await session.start({ microphone: true, camera: true });
+
+    expect(history.starts).toHaveLength(1);
+    expect(session.view().state).toBe('listening');
+  });
+
+  it('closes the first connection when history start rejects and permits a later start', async () => {
+    const time = new FakeTime(); const history = new FaultyHistory(); const voice = new MemoryRealtimeVoice();
+    history.startFailures = 1;
+    const session = createInterviewSession({ clock: time, scheduler: time, history, voice, snapshot: createContentSnapshot() });
+
+    await expect(session.start({ microphone: true, camera: true })).rejects.toThrow('history start failed');
+    expect(voice.connections[0]?.closed).toBe(true);
+    await session.start({ microphone: true, camera: true });
+
+    expect(session.view().state).toBe('listening');
+    expect(history.starts).toHaveLength(1);
+  });
+
   it('persists each final turn immediately and treats duplicate provider ids as harmless', async () => {
     const { history, voice } = await started();
     const turn = { type: 'final_turn' as const, providerTurnId: 'candidate-1', speaker: 'candidate' as const, text: '我负责了接口设计', startedAt: 2, endedAt: 3 };
@@ -161,6 +268,17 @@ describe('InterviewSession', () => {
     voice.emit(turn); await flush();
     expect(history.turns).toHaveLength(1);
     expect(history.turns[0]).toMatchObject({ sequence: 1, startedAt: 2, endedAt: 3 });
+  });
+
+  it('pauses safely when final-turn persistence rejects', async () => {
+    const time = new FakeTime(); const history = new FaultyHistory(); const voice = new MemoryRealtimeVoice();
+    history.appendFailures = 1;
+    const session = createInterviewSession({ clock: time, scheduler: time, history, voice, snapshot: createContentSnapshot() });
+    await session.start({ microphone: true, camera: true });
+    await voice.emit({ type: 'final_turn', providerTurnId: 'append-failure', speaker: 'candidate', text: '回答', startedAt: 0, endedAt: 1 });
+
+    expect(session.view()).toMatchObject({ state: 'paused', error: '会话操作失败' });
+    expect(history.turns).toHaveLength(0);
   });
 
   it('propagates a final-turn transcription gap to terminal history completeness', async () => {
@@ -180,6 +298,158 @@ describe('InterviewSession', () => {
     expect(history.finishes[0]).toMatchObject({ completeness: 'complete' });
   });
 
+  it('stores a missing transcript result after the five-second manual drain expires', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'session-drain-'));
+    const handle = createDatabase(path.join(directory, 'history.sqlite')); migrateDatabase(handle);
+    try {
+      const time = new FakeTime(); const voice = new MemoryRealtimeVoice();
+      const history = createInterviewHistory(handle.db);
+      const session = createInterviewSession({ clock: time, scheduler: time, history, voice, snapshot: createContentSnapshot() });
+      await session.start({ microphone: true, camera: true });
+      await voice.emit({ type: 'transcript', state: 'pending', providerTurnId: 'lost-tail', speaker: 'candidate', at: 0 });
+      await session.end();
+      time.advance(5_000); await flush();
+
+      const saved = await history.detail((await history.list())[0]!.id);
+      expect(saved?.session.completeness).toBe('missing');
+      expect(saved?.session.result).toBe('cancelled');
+    } finally { closeDatabase(handle); fs.rmSync(directory, { recursive: true, force: true }); }
+  });
+
+  it('persists the terminal SQLite result even when closing realtime voice rejects', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'session-close-'));
+    const handle = createDatabase(path.join(directory, 'history.sqlite')); migrateDatabase(handle);
+    try {
+      const time = new FakeTime(); const voice = new MemoryRealtimeVoice();
+      const history = createInterviewHistory(handle.db);
+      const session = createInterviewSession({ clock: time, scheduler: time, history, voice, snapshot: createContentSnapshot() });
+      await session.start({ microphone: true, camera: true });
+      voice.connections[0]?.rejectClose(new Error('close failed'));
+      await session.end();
+
+      const saved = await history.detail((await history.list())[0]!.id);
+      expect(saved?.session.result).toBe('cancelled');
+      expect(session.view().result).toBe('cancelled');
+    } finally { closeDatabase(handle); fs.rmSync(directory, { recursive: true, force: true }); }
+  });
+
+  it('ignores final transcript events emitted after the terminal result', async () => {
+    const { history, voice, session } = await started();
+    await session.end();
+    await voice.connections[0]?.emit({ type: 'final_turn', providerTurnId: 'too-late', speaker: 'candidate', text: '不应写入', startedAt: 0, endedAt: 1 });
+
+    expect(history.turns).toHaveLength(0);
+    expect(session.view().result).toBe('cancelled');
+  });
+
+  it('cannot resurrect state when a deferred barge-in cancellation races with end', async () => {
+    const { voice, session } = await started();
+    let releaseCancel!: () => void;
+    const cancelGate = new Promise<void>((resolve) => { releaseCancel = resolve; });
+    voice.connections[0]?.deferCancel(cancelGate);
+    await voice.emit({ type: 'transcript', state: 'pending', providerTurnId: 'deferred-tail', speaker: 'candidate', at: 0 });
+    await voice.emit({ type: 'assistant_speech', state: 'started', at: 0 });
+    const bargeIn = voice.emit({ type: 'candidate_speech', state: 'started', at: 1 });
+    await flush();
+    const ending = session.end();
+    releaseCancel();
+    await bargeIn;
+    await ending;
+
+    expect(session.view().state).toBe('closing');
+    expect(session.view().result).toBeNull();
+    await voice.emit({ type: 'final_turn', providerTurnId: 'deferred-tail', speaker: 'candidate', text: '回答', startedAt: 0, endedAt: 1 });
+    expect(session.view().state).toBe('finished');
+    expect(session.view().result).toBe('completed');
+  });
+
+  it('pauses safely when barge-in cancellation rejects', async () => {
+    const { voice, session } = await started();
+    voice.connections[0]?.rejectCancel(new Error('cancel failed'));
+    await voice.emit({ type: 'assistant_speech', state: 'started', at: 0 });
+    await voice.emit({ type: 'candidate_speech', state: 'started', at: 1 });
+
+    expect(session.view()).toMatchObject({ state: 'paused', error: '打断失败，可重试' });
+  });
+
+  it('continues when progress injection rejects and retries at a later checkpoint', async () => {
+    const { time, history, voice, session } = await started();
+    voice.connections[0]?.rejectInject(new Error('inject failed'));
+    for (let index = 1; index <= 10; index++) {
+      await voice.emit({ type: 'final_turn', providerTurnId: `inject-failure-${index}`, speaker: 'ai', text: `问题 ${index}`, startedAt: index, endedAt: index + 1 });
+    }
+
+    expect(session.view().state).toBe('listening');
+    expect(session.view().error).toBe('进度更新失败，将在下次检查点重试');
+    time.advance(5 * 60_000);
+    await flush();
+    expect(voice.connections[0]?.injectedProgress).toHaveLength(2);
+    expect(history.turns).toHaveLength(10);
+  });
+
+  it('continues after progress summarization or injection fails and retries at a later checkpoint', async () => {
+    const time = new FakeTime(); const history = new MemoryHistory(); const voice = new MemoryRealtimeVoice();
+    let summaries = 0;
+    const session = createInterviewSession({
+      clock: time,
+      scheduler: time,
+      history,
+      voice,
+      snapshot: createContentSnapshot(),
+      summarizeProgress: (input) => {
+        summaries++;
+        if (summaries === 1) throw new Error('summary failed');
+        return input.progress;
+      },
+    });
+    await session.start({ microphone: true, camera: true });
+    for (let index = 1; index <= 10; index++) {
+      await voice.emit({ type: 'final_turn', providerTurnId: `retry-progress-${index}`, speaker: 'ai', text: `问题 ${index}`, startedAt: index, endedAt: index + 1 });
+    }
+    expect(session.view().state).toBe('listening');
+    expect(session.view().error).toBe('进度更新失败，将在下次检查点重试');
+    time.advance(5 * 60_000); await flush();
+
+    expect(summaries).toBe(2);
+    expect(voice.connections[0]?.injectedProgress).toHaveLength(1);
+  });
+
+  it('pauses rather than finishing when history finish rejects, then permits ending again', async () => {
+    const time = new FakeTime(); const history = new FaultyHistory(); const voice = new MemoryRealtimeVoice();
+    history.finishFailures = 1;
+    const session = createInterviewSession({ clock: time, scheduler: time, history, voice, snapshot: createContentSnapshot() });
+    await session.start({ microphone: true, camera: true });
+
+    await session.end();
+    expect(session.view()).toMatchObject({ state: 'paused', result: null, error: '保存会话结果失败' });
+    await session.end();
+
+    expect(session.view().result).toBe('cancelled');
+    expect(history.finishes).toHaveLength(1);
+  });
+
+  it('keeps a retrying end command pending until terminal history persistence completes', async () => {
+    const time = new FakeTime(); const history = new FaultyHistory(); const voice = new MemoryRealtimeVoice();
+    let releaseFinish!: () => void;
+    history.finishGate = new Promise<void>((resolve) => { releaseFinish = resolve; });
+    const session = createInterviewSession({ clock: time, scheduler: time, history, voice, snapshot: createContentSnapshot() });
+    await session.start({ microphone: true, camera: true });
+    const ending = session.end();
+    await flush();
+
+    expect(history.finishStarted).toBe(true);
+    expect(session.view().state).toBe('closing');
+    let settled = false;
+    void ending.finally(() => { settled = true; });
+    await flush();
+    expect(settled).toBe(false);
+
+    releaseFinish();
+    await ending;
+    expect(session.view().state).toBe('finished');
+    expect(session.view().result).toBe('cancelled');
+  });
+
   it('compacts and injects progress every ten turns, at phase transition, and after reconnect', async () => {
     const { time, voice } = await started();
     for (let index = 1; index <= 10; index++) {
@@ -191,6 +461,48 @@ describe('InterviewSession', () => {
     expect(voice.connections[0]?.injectedProgress).toHaveLength(2);
     voice.emit({ type: 'connection', state: 'disconnected', at: time.now() }); await flush();
     expect(voice.connections[1]?.injectedProgress).toHaveLength(1);
+  });
+
+  it('gives custom progress summarizers only the bounded recent final-turn context', async () => {
+    const { voice } = await started();
+    const seen: Array<{ speaker: string; text: string; providerTurnId: string }> = [];
+    const time = new FakeTime(); const history = new MemoryHistory(); const customVoice = new MemoryRealtimeVoice();
+    const session = createInterviewSession({
+      clock: time,
+      scheduler: time,
+      history,
+      voice: customVoice,
+      snapshot: createContentSnapshot(),
+      summarizeProgress: (input) => { seen.push(...input.recentTurns); return input.progress; },
+    });
+    await session.start({ microphone: true, camera: true });
+    for (let index = 1; index <= 10; index++) {
+      await customVoice.emit({ type: 'final_turn', providerTurnId: `bounded-${index}`, speaker: index % 2 ? 'candidate' : 'ai', text: `文本 ${index}`, startedAt: index, endedAt: index + 1 });
+    }
+
+    expect(voice.connections).toHaveLength(1);
+    expect(seen.map((turn) => turn.providerTurnId)).toEqual(['bounded-3', 'bounded-4', 'bounded-5', 'bounded-6', 'bounded-7', 'bounded-8', 'bounded-9', 'bounded-10']);
+    expect(seen.map((turn) => turn.speaker)).toEqual(['candidate', 'ai', 'candidate', 'ai', 'candidate', 'ai', 'candidate', 'ai']);
+    expect(seen[0]?.text).toBe('文本 3');
+  });
+
+  it('builds default progress with AI topics, candidate evidence, and follow-ups', async () => {
+    const { voice } = await started();
+    for (let index = 1; index <= 10; index++) {
+      await voice.emit({
+        type: 'final_turn',
+        providerTurnId: `semantic-${index}`,
+        speaker: index === 10 ? 'candidate' : 'ai',
+        text: index === 10 ? '我用指标证明了缓存改造的收益' : `AI 话题 ${index}`,
+        startedAt: index,
+        endedAt: index + 1,
+      });
+    }
+
+    const progress = voice.connections[0]?.injectedProgress[0];
+    expect(progress?.coveredTopics).toContain('AI 话题 9');
+    expect(progress?.evidence).toContainEqual({ claim: '我用指标证明了缓存改造的收益', observation: '候选人最终回答', turnIds: ['semantic-10'] });
+    expect(progress?.pendingFollowUps).toContain('追问：我用指标证明了缓存改造的收益');
   });
 
   it('stops new topics at 40:30, enters natural close at 45 minutes, and hard-stops at 47', async () => {
@@ -209,6 +521,19 @@ describe('InterviewSession', () => {
     const { time, session } = await started();
     time.advance(47 * 60_000); await flush();
     expect(session.view().result).toBe('cancelled');
+  });
+
+  it('marks a transcript that arrives during closing as missing at the hard stop', async () => {
+    const { time, history, voice, session } = await started();
+    time.advance(45 * 60_000);
+    await flush();
+    expect(session.view().state).toBe('closing');
+    await voice.emit({ type: 'transcript', state: 'pending', providerTurnId: 'hard-stop-tail', speaker: 'candidate', at: time.now() });
+    time.advance(2 * 60_000);
+    await flush();
+
+    expect(session.view().result).toBe('cancelled');
+    expect(history.finishes[0]).toMatchObject({ completeness: 'missing' });
   });
 
   it('maps ending before a candidate final answer to cancelled and after one to completed', async () => {
