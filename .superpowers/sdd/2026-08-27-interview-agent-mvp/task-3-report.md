@@ -8,7 +8,7 @@ Complete. SQLite persistence for immutable interview sessions, final transcript 
 
 - RED: the first focused integration run failed before collecting tests because the requested `src/db/client.ts` and `history.ts` modules did not exist (`Cannot find module '../../db/client'`).
 - RED: after the initial minimal implementation, the integration tests reached the database boundary and failed with `Can't find meta/_journal.json file`, proving the tests require the real Drizzle migration rather than silently creating tables.
-- GREEN: after generating `drizzle/0000_solid_firestar.sql`, all six focused integration behaviors passed against separately created temporary SQLite files.
+- GREEN: after generating `drizzle/0000_fast_rhino.sql`, all six focused integration behaviors passed against separately created temporary SQLite files.
 - The tests cover session start and snapshot capture, ordered final-turn append, `(session_id, provider_turn_id)` idempotency, one-way terminal transition, abandoned-session recovery, independent feedback retry state, and cascade deletion.
 - RED/GREEN follow-up: a regression test first exposed that a session marked `missing` did not surface a list/detail transcript-gap flag when no individual turn carried a gap; summaries now combine session-level completeness with turn-level gap markers.
 
@@ -34,7 +34,7 @@ Complete. SQLite persistence for immutable interview sessions, final transcript 
 ## Files
 
 - `drizzle.config.ts`
-- `drizzle/0000_solid_firestar.sql`
+- `drizzle/0000_fast_rhino.sql`
 - `drizzle/meta/_journal.json`
 - `src/db/schema.ts`
 - `src/db/client.ts`
@@ -73,7 +73,7 @@ Fix-round TDD evidence:
 
 - Added runtime checks for speaker, completeness, malformed session IDs, and terminal feedback misuse. Added SQLite checks for result/completeness/status/speaker/sequence/timestamp/target invariants.
 - `appendFinalTurn` now uses an immediate Drizzle transaction and targeted provider-id conflict handling; every SQLite connection sets a 5-second busy timeout. Sequence conflicts remain distinct from provider duplicates.
-- Strengthened the unpublished initial migration by regenerating it as `drizzle/0000_fast_rhino.sql` with the new checks and indexes.
+- Strengthened the unpublished initial migration as `drizzle/0000_fast_rhino.sql` with the new checks and indexes.
 
 TDD/verification evidence:
 
@@ -89,7 +89,7 @@ TDD/verification evidence:
 
 Round-2 self-review: production history writes validate before entering SQLite; source provenance remains computed by InterviewContent; recovery leaves effective duration unknown; no public aliases or provider credentials are persisted; all FK cascades and one-snapshot/one-sequence/provider uniqueness rules remain transactional; and the report is the only post-commit working-tree change.
 
-## Final fix-round verification at `03187b3`
+## Final fix-round verification at `55c8c78`
 
 Commands and observed outputs:
 
@@ -105,7 +105,7 @@ Final changed-file inventory:
 
 - `.superpowers/sdd/2026-08-27-interview-agent-mvp/task-3-report.md`
 - `drizzle.config.ts`
-- `drizzle/0000_romantic_scarlet_witch.sql`
+- `drizzle/0000_fast_rhino.sql`
 - `drizzle/meta/0000_snapshot.json`
 - `drizzle/meta/_journal.json`
 - `src/db/client.ts`

@@ -21,11 +21,15 @@ const snapshot: ContentSnapshot = {
 };
 
 function newHistory() {
+  return newHistoryWithDatabase().history;
+}
+
+function newHistoryWithDatabase() {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'interview-history-'));
   const database = createDatabase(path.join(directory, 'history.sqlite'));
   migrateDatabase(database);
   databases.push({ handle: database, directory });
-  return createInterviewHistory(database.db);
+  return { history: createInterviewHistory(database.db), handle: database };
 }
 
 afterEach(() => {
@@ -141,7 +145,7 @@ describe('InterviewHistory', () => {
   });
 
   it('deletes a session and all dependent rows atomically', async () => {
-    const history = newHistory();
+    const { history, handle } = newHistoryWithDatabase();
     const id = await history.start({ snapshot, startedAt: 1, targetDurationMs: 2_700_000 });
     await history.appendFinalTurn({ sessionId: id, providerTurnId: 'turn-1', sequence: 1, speaker: 'candidate', text: '回答', startedAt: 1, endedAt: 2 });
     await history.finish(id, 'completed', 'complete', 10);
@@ -150,5 +154,10 @@ describe('InterviewHistory', () => {
     await history.delete(id);
     expect(await history.detail(id)).toBeNull();
     expect(await history.list()).toHaveLength(0);
+    const dependentTables = ['content_snapshots', 'interview_turns', 'interview_feedback'] as const;
+    for (const table of dependentTables) {
+      const row = handle.sqlite.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE session_id = ?`).get(id) as { count: number };
+      expect(row.count, `${table} rows should cascade on session deletion`).toBe(0);
+    }
   });
 });
