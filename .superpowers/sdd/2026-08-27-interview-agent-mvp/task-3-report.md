@@ -117,3 +117,12 @@ Final changed-file inventory:
 - `src/modules/interview-history/types.ts`
 
 Fix-round self-review: source-specific snapshot hashes are produced by `InterviewContent` and persisted without recomputation; effective duration is supplied by the session controller and recovery leaves it unknown; boundary checks reject malformed identifiers, timestamps, durations, sequences, snapshots, turns, and feedback; feedback transitions enforce completed-session/candidate-answer eligibility and clear stale fields; SQLite uniqueness protects one snapshot, one sequence, and one provider turn per session; provider duplicate inserts use a targeted conflict clause; and all test databases are uniquely temporary files with cleanup.
+
+## Review fix round 3
+
+- Strengthened the cascade deletion integration test to retain the same SQLite database handle used by `InterviewHistory`, then directly count `content_snapshots`, `interview_turns`, and `interview_feedback` rows by session ID after deletion. It still checks the public `detail` and `list` results as well.
+- RED: with foreign-key enforcement temporarily disabled in the test setup, the focused test failed at the direct count assertion (`content_snapshots` remained at 1), demonstrating that the regression test detects missing/disabled cascades.
+- GREEN: restoring the normal connection setup (`PRAGMA foreign_keys = ON`) made the focused test pass with 8/8 tests.
+- Implementation commit/new head: `045c4c3`.
+- Verification: focused history test 1 file/8 tests passed; full suite 5 files/23 tests passed; typecheck passed; lint passed with no diagnostics; `git diff --check` passed.
+- Concurrency note: there is no empirical worker/two-connection test in this task. The concurrency claim is limited to implementation evidence: `appendFinalTurn` uses an immediate transaction and each SQLite connection sets a 5-second busy timeout.
