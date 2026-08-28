@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type { ContentSnapshot, ContentSource } from './types';
 
 /** Human-readable content revision stored with every interview session. */
@@ -105,7 +107,7 @@ export const FIXED_INTERVIEW_BRIEF = `# Node.js 全栈 + AI Agent 面试说明
 
 ## 面试官行为原则
 
-- 使用中文，专业克制且略有压力。
+- 使用中文，专业克制，略有压力。
 - 一次只问一个主问题；可根据回答追问，不连续堆叠多个问题。
 - 对空泛回答追问具体例子；对结论追问理由和被拒绝的替代方案；对项目陈述追问个人决策。
 - 简历内容是待验证陈述。出现矛盾时指出矛盾并追问，不替候选人补全经历。
@@ -115,13 +117,29 @@ export const FIXED_INTERVIEW_BRIEF = `# Node.js 全栈 + AI Agent 面试说明
 
 ## 会后反馈
 
-反馈在 45 分钟面试结束后生成，不占用面试时间。反馈不得替代面试中的追问，也不在面试中提供答案、评分或任何录用结论。
+反馈在 45 分钟面试结束后生成，不占用面试时间。
 
-反馈应按以下六个维度给出 1–5 级评价，并引用本场证据：项目真实性与个人贡献、Node.js 后端能力、前端与全栈交付能力、AI Agent 应用能力、系统设计与工程取舍、表达结构与追问应对。没有足够证据的维度标记“本场未充分验证”。
+### 六维标尺
 
-回答复盘选择 3 个表现最好的回答片段和 3 个最需要改进的回答片段，并给出 3 个当前最需要补强的问题及具体练习动作；不编造候选人没有做过的经历。`;
+1. 项目真实性与个人贡献。
+2. Node.js 后端能力。
+3. 前端与全栈交付能力。
+4. AI Agent 应用能力。
+5. 系统设计与工程取舍。
+6. 表达结构与追问应对。
 
-const EXCLUDED_LABELS = /姓名|电话|手机|邮箱|出生日期|住址|地址|联系方式/;
+每个维度给出 1–5 级评价、本场回答证据、做得好的地方、暴露的问题和下一步练习建议。没有足够证据的维度标记“本场未充分验证”。不输出“建议录用 / 不建议录用”。
+
+### 回答复盘
+
+- 选择 3 个表现最好的回答片段，说明有效原因。
+- 选择 3 个最需要改进的回答片段，指出缺失信息，给出更好的回答结构或示范提纲。
+- 不编造候选人没有做过的经历。
+- 最后给出“当前最需要补强的三个问题”及具体练习动作。`;
+
+const EXCLUDED_LABELS = /(?:^|[\s|，,；;])(?:姓名|电话|手机|邮箱|出生日期|住址|地址|联系方式|联系人|name|phone|email|address|birthday)\s*[:：]/i;
+const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+const PHONE_PATTERN = /(?<!\d)(?:\+?86[\s-]?)?1[3-9]\d{9}(?!\d)/g;
 
 /** Remove privacy-labelled fields while retaining the technical profile. */
 export function filterPrivateProfile(source: string): string {
@@ -130,9 +148,13 @@ export function filterPrivateProfile(source: string): string {
     .split('\n')
     .filter((line) => !EXCLUDED_LABELS.test(line))
     .join('\n')
+    .replace(EMAIL_PATTERN, '[已过滤邮箱]')
+    .replace(PHONE_PATTERN, '[已过滤电话]')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
+
+export const filterPrivateContent = filterPrivateProfile;
 
 function normalizeSource(source: string): string {
   return source.replace(/\r\n?/g, '\n').trim();
@@ -145,80 +167,14 @@ function sourceFrom(input?: ContentSource | string, interviewBrief?: string): Co
   return input ?? {};
 }
 
-const SHA256_K = [
-  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
-];
-
-function rotateRight(value: number, bits: number): number {
-  return (value >>> bits) | (value << (32 - bits));
-}
-
-function sha256(value: string): string {
-  const bytes = new TextEncoder().encode(value);
-  const paddedLength = Math.ceil((bytes.length + 9) / 64) * 64;
-  const padded = new Uint8Array(paddedLength);
-  padded.set(bytes);
-  padded[bytes.length] = 0x80;
-  const bitLength = bytes.length * 8;
-  for (let index = 0; index < 8; index += 1) {
-    padded[padded.length - 1 - index] = (bitLength / 2 ** (index * 8)) & 0xff;
-  }
-
-  let h0 = 0x6a09e667;
-  let h1 = 0xbb67ae85;
-  let h2 = 0x3c6ef372;
-  let h3 = 0xa54ff53a;
-  let h4 = 0x510e527f;
-  let h5 = 0x9b05688c;
-  let h6 = 0x1f83d9ab;
-  let h7 = 0x5be0cd19;
-
-  for (let offset = 0; offset < padded.length; offset += 64) {
-    const words = new Uint32Array(64);
-    for (let index = 0; index < 16; index += 1) {
-      const position = offset + index * 4;
-      words[index] = ((padded[position] << 24) | (padded[position + 1] << 16) | (padded[position + 2] << 8) | padded[position + 3]) >>> 0;
-    }
-    for (let index = 16; index < 64; index += 1) {
-      const valueA = words[index - 15];
-      const valueB = words[index - 2];
-      const sigma0 = (rotateRight(valueA, 7) ^ rotateRight(valueA, 18) ^ (valueA >>> 3)) >>> 0;
-      const sigma1 = (rotateRight(valueB, 17) ^ rotateRight(valueB, 19) ^ (valueB >>> 10)) >>> 0;
-      words[index] = (words[index - 16] + sigma0 + words[index - 7] + sigma1) >>> 0;
-    }
-
-    let a = h0; let b = h1; let c = h2; let d = h3; let e = h4; let f = h5; let g = h6; let h = h7;
-    for (let index = 0; index < 64; index += 1) {
-      const sigma1 = (rotateRight(e, 6) ^ rotateRight(e, 11) ^ rotateRight(e, 25)) >>> 0;
-      const choice = (e & f) ^ (~e & g);
-      const temp1 = (h + sigma1 + choice + SHA256_K[index] + words[index]) >>> 0;
-      const sigma0 = (rotateRight(a, 2) ^ rotateRight(a, 13) ^ rotateRight(a, 22)) >>> 0;
-      const majority = (a & b) ^ (a & c) ^ (b & c);
-      const temp2 = (sigma0 + majority) >>> 0;
-      h = g; g = f; f = e; e = (d + temp1) >>> 0; d = c; c = b; b = a; a = (temp1 + temp2) >>> 0;
-    }
-    h0 = (h0 + a) >>> 0; h1 = (h1 + b) >>> 0; h2 = (h2 + c) >>> 0; h3 = (h3 + d) >>> 0;
-    h4 = (h4 + e) >>> 0; h5 = (h5 + f) >>> 0; h6 = (h6 + g) >>> 0; h7 = (h7 + h) >>> 0;
-  }
-
-  return [h0, h1, h2, h3, h4, h5, h6, h7].map((word) => word.toString(16).padStart(8, '0')).join('');
-}
-
 export function createContentSnapshot(input?: ContentSource | string, interviewBrief?: string): ContentSnapshot {
   const source = sourceFrom(input, interviewBrief);
   const candidateProfile = filterPrivateProfile(source.candidateProfile ?? FIXED_CANDIDATE_PROFILE);
-  const brief = normalizeSource(source.interviewBrief ?? FIXED_INTERVIEW_BRIEF);
+  const brief = filterPrivateProfile(normalizeSource(source.interviewBrief ?? FIXED_INTERVIEW_BRIEF));
   const canonicalPayload = JSON.stringify({ version: CONTENT_VERSION, candidateProfile, interviewBrief: brief });
   return Object.freeze({
     version: CONTENT_VERSION,
-    hash: sha256(canonicalPayload),
+    hash: createHash('sha256').update(canonicalPayload, 'utf8').digest('hex'),
     candidateProfile,
     interviewBrief: brief,
   });
