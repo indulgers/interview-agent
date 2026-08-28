@@ -89,7 +89,7 @@ TDD/verification evidence:
 
 Round-2 self-review: production history writes validate before entering SQLite; source provenance remains computed by InterviewContent; recovery leaves effective duration unknown; no public aliases or provider credentials are persisted; all FK cascades and one-snapshot/one-sequence/provider uniqueness rules remain transactional; and the report is the only post-commit working-tree change.
 
-## Final fix-round verification at `55c8c78`
+## Historical fix-round verification checkpoint at `55c8c78`
 
 Commands and observed outputs:
 
@@ -99,7 +99,7 @@ Commands and observed outputs:
 - `COREPACK_ENABLE_PROJECT_SPEC=0 pnpm typecheck` — Next route types generated successfully; `tsc --noEmit` exited 0.
 - `COREPACK_ENABLE_PROJECT_SPEC=0 pnpm lint` — exited 0 with no diagnostics.
 - `git diff --check` — no output and exit 0.
-- Final pre-report `git status --short --branch` — `## feat/interview-agent-mvp` with no working-tree changes; this report append is the only subsequent modification.
+- At this `55c8c78` checkpoint, final pre-report `git status --short --branch` reported `## feat/interview-agent-mvp` with no working-tree changes; the report append was the only subsequent modification at that time. Later checkpoints are recorded below.
 
 Final changed-file inventory:
 
@@ -123,6 +123,10 @@ Fix-round self-review: source-specific snapshot hashes are produced by `Intervie
 - Strengthened the cascade deletion integration test to retain the same SQLite database handle used by `InterviewHistory`, then directly count `content_snapshots`, `interview_turns`, and `interview_feedback` rows by session ID after deletion. It still checks the public `detail` and `list` results as well.
 - RED: with foreign-key enforcement temporarily disabled in the test setup, the focused test failed at the direct count assertion (`content_snapshots` remained at 1), demonstrating that the regression test detects missing/disabled cascades.
 - GREEN: restoring the normal connection setup (`PRAGMA foreign_keys = ON`) made the focused test pass with 8/8 tests.
-- Implementation commit/new head: `045c4c3`.
+- Historical implementation checkpoint/new head: `045c4c3`.
 - Verification: focused history test 1 file/8 tests passed; full suite 5 files/23 tests passed; typecheck passed; lint passed with no diagnostics; `git diff --check` passed.
 - Concurrency note: there is no empirical worker/two-connection test in this task. The concurrency claim is limited to implementation evidence: `appendFinalTurn` uses an immediate transaction and each SQLite connection sets a 5-second busy timeout.
+
+## Report metadata
+
+- Current Task 3 head: `43f11c8`, after commits `045c4c3` and `43f11c8`. No verification was rerun for this report-only metadata update; the commands above remain associated with their recorded checkpoints.
