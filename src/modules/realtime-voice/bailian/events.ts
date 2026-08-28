@@ -34,9 +34,9 @@ export function parseBailianEvent(payload: unknown, at: number): VoiceEvent[] {
     case 'response.created':
       return [{ type: 'response', state: 'started', at }, { type: 'assistant_speech', state: 'started', at }];
     case 'response.output_item.added':
-      return event.item.type === 'message' ? [{ type: 'transcript', state: 'pending', speaker: 'assistant', providerTurnId: event.item.id, at }] : [];
+      return event.item.type === 'message' ? [{ type: 'transcript', state: 'pending', speaker: 'ai', providerTurnId: event.item.id, at }] : [];
     case 'response.audio_transcript.done':
-      return [{ type: 'final_turn', providerTurnId: event.item_id, speaker: 'assistant', text: event.transcript, startedAt: at, endedAt: at }];
+      return [{ type: 'final_turn', providerTurnId: event.item_id, speaker: 'ai', text: event.transcript, startedAt: at, endedAt: at }];
     case 'response.done':
       return [{ type: 'assistant_speech', state: 'stopped', at }, { type: 'response', state: 'completed', at }];
     case 'error':

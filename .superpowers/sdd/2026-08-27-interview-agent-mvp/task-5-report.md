@@ -20,7 +20,8 @@ GREEN:
 
 - `node_modules/.bin/vitest run src/app/api/realtime/session/route.test.ts src/modules/realtime-voice/bailian/events.test.ts src/modules/realtime-voice/bailian/adapter.test.ts`
 - Result: 3 files passed, 17 tests passed (2026-08-28).
-- `git diff --check` passed (2026-08-28).
+- `node_modules/.bin/vitest run` — 9 files, 76 tests passed.
+- `node_modules/.bin/next typegen && node_modules/.bin/tsc --noEmit`, `node_modules/.bin/eslint .`, `node_modules/.bin/next build --webpack`, and `git diff --check` passed (2026-08-28).
 
 ## Scope withheld by security gate
 
@@ -28,4 +29,4 @@ No real provider request was made, no credentials were inspected, and no credent
 
 ## Remaining verification
 
-Per coordinator instruction, this task run was restricted to focused adapter tests; full suite, typecheck, lint, and production build have not been run by this task agent.
+Only the credential-gated real 50-minute mainland-network PoC remains. It is deliberately unchecked rather than simulated.

@@ -34,13 +34,13 @@ describe('parseBailianEvent', () => {
       { type: 'final_turn', providerTurnId: 'item-user', speaker: 'candidate', text: '我会先说明方案。', startedAt: now, endedAt: now },
     ]);
     expect(parseBailianEvent({ type: 'response.audio_transcript.done', response_id: 'resp-1', item_id: 'item-assistant', output_index: 0, content_index: 0, transcript: '请继续。' }, now)).toEqual([
-      { type: 'final_turn', providerTurnId: 'item-assistant', speaker: 'assistant', text: '请继续。', startedAt: now, endedAt: now },
+      { type: 'final_turn', providerTurnId: 'item-assistant', speaker: 'ai', text: '请继续。', startedAt: now, endedAt: now },
     ]);
   });
 
   it('maps the official assistant output-item sample to a pending stable turn ID', () => {
     expect(parseBailianEvent({ type: 'response.output_item.added', response_id: 'resp-1', output_index: 0, item: { id: 'item-assistant', type: 'message', status: 'in_progress', role: 'assistant' } }, now)).toEqual([
-      { type: 'transcript', state: 'pending', speaker: 'assistant', providerTurnId: 'item-assistant', at: now },
+      { type: 'transcript', state: 'pending', speaker: 'ai', providerTurnId: 'item-assistant', at: now },
     ]);
   });
 
