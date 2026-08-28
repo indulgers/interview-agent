@@ -111,4 +111,25 @@ describe('POST /api/realtime/session', () => {
     expect(await response.text()).toBe('实时语音服务暂时不可用。');
     expect(signal?.aborted).toBe(true);
   });
+
+  it('keeps the upstream timeout active while its SDP response stream stalls after headers', async () => {
+    let signal: AbortSignal | undefined;
+    let cancelled = false;
+    const stalledBody = new ReadableStream<Uint8Array<ArrayBuffer>>({
+      pull() { return new Promise<void>(() => {}); },
+      cancel() { cancelled = true; },
+    });
+    const response = await postSession(new Request('http://localhost/api/realtime/session', { method: 'POST', headers: { 'content-type': 'application/sdp' }, body: 'v=0\r\n' }), {
+      readEnv: () => env,
+      timeoutMs: 1,
+      fetch: async (_input, init) => {
+        signal = init.signal ?? undefined;
+        return { ok: true, headers: new Headers({ 'content-type': 'application/sdp' }), body: stalledBody, text: async () => 'unused' };
+      },
+    });
+    expect(response.status).toBe(502);
+    expect(await response.text()).toBe('实时语音服务暂时不可用。');
+    expect(signal?.aborted).toBe(true);
+    expect(cancelled).toBe(true);
+  });
 });

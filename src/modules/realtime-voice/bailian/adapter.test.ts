@@ -15,9 +15,10 @@ class FakeChannel implements BailianDataChannel {
 
 class FakePeer implements BailianPeerConnection {
   iceGatheringState: 'new' | 'gathering' | 'complete' = 'complete';
-  connectionState: 'new' | 'connected' | 'failed' | 'closed' = 'new';
+  connectionState: 'new' | 'connected' | 'disconnected' | 'failed' | 'closed' = 'new';
   ondatachannel: ((event: { channel: BailianDataChannel }) => void) | null = null;
   ontrack: ((event: { streams: unknown[] }) => void) | null = null;
+  onconnectionstatechange: (() => void) | null = null;
   readonly outbound = new FakeChannel('oai-events');
   readonly inbound = new FakeChannel('txt');
   closed = false;
@@ -61,6 +62,11 @@ function setup(options: { fetch?: BailianBrowserDependencies['fetch']; play?: ()
     createAudioElement: () => audio,
     now: options.now ?? (() => 1_728_000_000_000),
     sleep: options.sleep ?? (() => new Promise<void>((resolve) => waits.push(resolve))),
+    scheduleTimeout: (callback) => { waits.push(callback); return callback; },
+    cancelTimeout: (handle) => {
+      const index = waits.indexOf(handle as () => void);
+      if (index >= 0) waits.splice(index, 1);
+    },
     onDiagnostic: (eventName) => diagnostics.push(eventName),
   };
   return { peer, track, audio, waits, diagnostics, voice: new BailianRealtimeVoice(deps) };
@@ -80,7 +86,7 @@ async function readyForPeer(peer: FakePeer) {
 
 describe('BailianRealtimeVoice', () => {
   it('negotiates injected WebRTC/media boundaries and sends the documented semantic-VAD session update', async () => {
-    const { peer, track, audio, voice } = setup();
+    const { peer, track, audio, waits, voice } = setup();
     const connected = voice.connect({ instructions: '只问一个技术问题。', resumeFromSequence: 3 });
     await readyForPeer(peer);
     peer.deliverInbound();
@@ -91,6 +97,7 @@ describe('BailianRealtimeVoice', () => {
     expect(peer.replacedTrack).toBe(track);
     expect(audio.autoplay).toBe(true);
     expect(audio.srcObject).toBe('remote-audio-stream');
+    expect(waits).toEqual([]);
     expect(JSON.parse(peer.outbound.sent[0]!)).toMatchObject({
       type: 'session.update',
       session: {
@@ -216,6 +223,36 @@ describe('BailianRealtimeVoice', () => {
     await connection.close();
   });
 
+  it('queues a playback rejection between provider events and suppresses it after close', async () => {
+    let rejectPlay!: (error: Error) => void;
+    const { peer, diagnostics, voice } = setup({ play: () => new Promise<void>((_resolve, reject) => { rejectPlay = reject; }) });
+    const connectionPromise = voice.connect({ instructions: 'instructions', resumeFromSequence: 0 }); await readyForPeer(peer); peer.deliverInbound();
+    const connection = await connectionPromise;
+    const delivered: string[] = [];
+    connection.subscribe(async () => { throw new Error('listener failure'); });
+    connection.subscribe((event) => { delivered.push(event.type); });
+
+    peer.inbound.emit(JSON.stringify({ type: 'response.created', response: { id: 'response-1', status: 'in_progress' } }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    peer.deliverRemoteAudio('remote');
+    await Promise.resolve();
+    rejectPlay(new Error('autoplay denied'));
+    peer.inbound.emit(JSON.stringify({ type: 'response.done', response: { id: 'response-1', status: 'completed' } }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(delivered).toEqual(['response', 'assistant_speech', 'error', 'assistant_speech', 'response']);
+    expect(diagnostics.filter((event) => event === 'voice-listener-failed')).toHaveLength(5);
+
+    const deliveredBeforeClose = [...delivered];
+    peer.deliverRemoteAudio('remote-after-close');
+    await Promise.resolve();
+    const closing = connection.close();
+    rejectPlay(new Error('late autoplay denial'));
+    await closing;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(delivered).toEqual(deliveredBeforeClose);
+  });
+
   it('isolates throwing and rejecting subscribers so the event queue continues', async () => {
     const { peer, diagnostics, voice } = setup();
     const connectionPromise = voice.connect({ instructions: 'instructions', resumeFromSequence: 0 }); await readyForPeer(peer); peer.deliverInbound();
@@ -249,6 +286,53 @@ describe('BailianRealtimeVoice', () => {
     expect(peer.outbound.closed).toBe(true);
     expect(peer.closed).toBe(true);
     expect(audio.paused).toBe(true);
+  });
+
+  it('keeps the SDP timeout active while reading a response body that never resolves', async () => {
+    let signal: AbortSignal | undefined;
+    const { peer, track, audio, waits, voice } = setup({ fetch: async (_input, init) => {
+      signal = init.signal;
+      return {
+        ok: true,
+        text: () => new Promise<string>((_resolve, reject) => signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })),
+      };
+    } });
+    const connecting = voice.connect({ instructions: 'instructions', resumeFromSequence: 0 });
+    await readyForPeer(peer);
+    await expirePendingSleeps(waits, () => signal?.aborted === true);
+    await expect(connecting).rejects.toThrow('实时语音连接不可用。');
+    expect(signal?.aborted).toBe(true);
+    expect(track.stopped).toBe(true);
+    expect(peer.outbound.closed).toBe(true);
+    expect(peer.closed).toBe(true);
+    expect(audio.paused).toBe(true);
+  });
+
+  it.each(['disconnected', 'failed', 'closed'] as const)('releases resources once and rejects commands after the peer becomes %s', async (state) => {
+    const { peer, track, audio, voice } = setup();
+    const connectionPromise = voice.connect({ instructions: 'instructions', resumeFromSequence: 0 }); await readyForPeer(peer); peer.deliverInbound();
+    const connection = await connectionPromise;
+    const events: string[] = [];
+    connection.subscribe((event) => { events.push(event.type === 'connection' ? `${event.type}:${event.state}` : event.type); });
+    const sentBeforeDisconnect = peer.outbound.sent.length;
+
+    peer.connectionState = state as FakePeer['connectionState'];
+    peer.onconnectionstatechange?.();
+    peer.onconnectionstatechange?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(events).toEqual(['connection:disconnected']);
+    expect(track.stopped).toBe(true);
+    expect(peer.inbound.closed).toBe(true);
+    expect(peer.outbound.closed).toBe(true);
+    expect(peer.closed).toBe(true);
+    expect(audio.paused).toBe(true);
+    await expect(connection.cancelAssistantSpeech()).rejects.toThrow('实时语音连接已断开。');
+    await expect(connection.signalEndOfAnswer()).rejects.toThrow('实时语音连接已断开。');
+    await expect(connection.injectProgress({ phase: 'fullstack', coveredTopics: [], evidence: [], pendingFollowUps: [], updatedThroughSequence: 0 })).rejects.toThrow('实时语音连接已断开。');
+    expect(peer.outbound.sent).toHaveLength(sentBeforeDisconnect);
+    await connection.close();
+    expect(events).toEqual(['connection:disconnected']);
   });
 
   it('times out stalled ICE gathering and releases local media and peer resources', async () => {

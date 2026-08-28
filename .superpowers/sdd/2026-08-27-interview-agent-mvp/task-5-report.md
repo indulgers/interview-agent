@@ -57,3 +57,15 @@ GREEN:
 - GREEN evidence: `node_modules/.bin/vitest run src/modules/realtime-voice/bailian/adapter.test.ts` — 14/14; focused route/realtime suite — 3 files, 34 tests; full suite — 10 files, 94 tests; `next typegen && tsc --noEmit`, ESLint, Webpack production build, and `git diff --check` all passed. `pnpm` could not be used because Corepack's package-signature verification failed before command execution, so installed project binaries were used.
 
 The only remaining PoC is the security-gated real 50-minute mainland-network session described above. No provider request was performed and no credential value was added to task code, tests, or documentation.
+
+## Fix round 2 completion (2026-08-28)
+
+RED/GREEN:
+
+- Browser SDP negotiation now keeps one aborting timeout boundary through both fetch headers and `response.text()`. A header-success/body-never-resolves fake proves abort, sanitized failure, full media/channel/peer cleanup, and no retained timeout callback.
+- Server upstream handling applies the same deadline to the complete SDP stream, cancels a stalled response reader on abort, and returns the existing sanitized 502 response. A stream which stalls after valid headers is covered directly.
+- Remote `audio.play()` failures now run on the serialized provider-event tail. The regression proves provider event → recoverable playback error → later provider event ordering, listener-throw isolation, and suppression when close wins the race.
+- `disconnected`, `failed`, and `closed` peer states emit one normalized disconnect event, release resources idempotently, and make later cancel/end/inject calls reject the same safe error without sending a channel message.
+- The development spike derives connected state from subscribed connection events and wraps every asynchronous button/unmount close action so expected connection errors are contained.
+
+Final verification (2026-08-28): focused adapter/route/events/spike suite 46/46; full suite 10 files, 104 tests; `next typegen && tsc --noEmit`; ESLint; Webpack production build; and `git diff --check` all passed. The timeout-cleanup assertion was mutation-checked by temporarily omitting cancellation; it failed with four retained timeout callbacks, then passed again after restoring cancellation.
