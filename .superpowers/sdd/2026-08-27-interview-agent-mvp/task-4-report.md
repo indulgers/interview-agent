@@ -171,3 +171,23 @@ Generating route types...
 ```
 
 The timeout-cycle correction was observed RED before the test expectation was corrected: the third independent cycle correctly remained `listening`, not `paused`. The other continuation tests are regression coverage for already-present hardening behavior; no production behavior was weakened to satisfy the matrix.
+
+## Fix round 3 — test-quality and cadence correction
+
+- Tightened bounded custom summarizer assertions to inspect `customVoice` and the exact injected progress payload; the unrelated adapter can no longer satisfy the test.
+- Tightened reconnect assertions to use an identifiable deferred connection, assert the accepted connection’s exact progress payload, and assert the stale connection was closed without injection.
+- Mutation testing exposed an actual cadence race: a successful reconnect could still schedule subsequent reconnect attempts. The cadence callback now schedules its next tick only when that attempt remains in `reconnecting`.
+
+Verification after this round:
+
+```text
+./node_modules/.bin/vitest run src/modules/interview-session/machine.test.ts --testTimeout 5000
+Test Files  1 passed (1)
+     Tests  34 passed (34)
+
+./node_modules/.bin/vitest run && ./node_modules/.bin/next typegen && ./node_modules/.bin/tsc --noEmit && ./node_modules/.bin/eslint . && git diff --check
+Test Files  6 passed (6)
+     Tests  57 passed (57)
+Generating route types...
+✓ Types generated successfully
+```

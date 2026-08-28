@@ -186,14 +186,24 @@ describe('InterviewSession', () => {
   it('pauses immediately on disconnect, reconnects within 20 seconds, and does not count the pause', async () => {
     const { time, voice, session } = await started();
     time.advance(1_000);
-    voice.enqueueConnectFailure(new Error('temporary offline'));
+    const delayedReconnect = voice.deferNextConnect();
     voice.emit({ type: 'connection', state: 'disconnected', at: 1_000 }); await flush();
     expect(session.view().state).toBe('reconnecting');
     time.advance(10_000); await flush();
     expect(session.view().activeDurationMs).toBe(1_000);
-    await session.retry();
     expect(session.view().state).toBe('listening');
-    expect(voice.connections.some((connection) => connection.injectedProgress.length === 1)).toBe(true);
+    expect(voice.connections).toHaveLength(2);
+    expect(voice.connections[1]?.injectedProgress).toEqual([{
+      phase: 'intro',
+      coveredTopics: [],
+      evidence: [],
+      pendingFollowUps: [],
+      updatedThroughSequence: 0,
+    }]);
+    const staleReconnect = delayedReconnect.resolve();
+    await flush();
+    expect(staleReconnect.closed).toBe(true);
+    expect(staleReconnect.injectedProgress).toEqual([]);
   });
 
   it('marks an unrecovered connection as interrupted after twenty seconds', async () => {
@@ -464,7 +474,6 @@ describe('InterviewSession', () => {
   });
 
   it('gives custom progress summarizers only the bounded recent final-turn context', async () => {
-    const { voice } = await started();
     const seen: Array<{ speaker: string; text: string; providerTurnId: string }> = [];
     const time = new FakeTime(); const history = new MemoryHistory(); const customVoice = new MemoryRealtimeVoice();
     const session = createInterviewSession({
@@ -473,14 +482,28 @@ describe('InterviewSession', () => {
       history,
       voice: customVoice,
       snapshot: createContentSnapshot(),
-      summarizeProgress: (input) => { seen.push(...input.recentTurns); return input.progress; },
+      summarizeProgress: (input) => {
+        seen.push(...input.recentTurns);
+        return {
+          ...input.progress,
+          coveredTopics: input.recentTurns.map((turn) => turn.text),
+          updatedThroughSequence: input.finalTurnCount,
+        };
+      },
     });
     await session.start({ microphone: true, camera: true });
     for (let index = 1; index <= 10; index++) {
       await customVoice.emit({ type: 'final_turn', providerTurnId: `bounded-${index}`, speaker: index % 2 ? 'candidate' : 'ai', text: `文本 ${index}`, startedAt: index, endedAt: index + 1 });
     }
 
-    expect(voice.connections).toHaveLength(1);
+    expect(customVoice.connections).toHaveLength(1);
+    expect(customVoice.connections[0]?.injectedProgress).toEqual([{
+      phase: 'intro',
+      coveredTopics: ['文本 3', '文本 4', '文本 5', '文本 6', '文本 7', '文本 8', '文本 9', '文本 10'],
+      evidence: [],
+      pendingFollowUps: [],
+      updatedThroughSequence: 10,
+    }]);
     expect(seen.map((turn) => turn.providerTurnId)).toEqual(['bounded-3', 'bounded-4', 'bounded-5', 'bounded-6', 'bounded-7', 'bounded-8', 'bounded-9', 'bounded-10']);
     expect(seen.map((turn) => turn.speaker)).toEqual(['candidate', 'ai', 'candidate', 'ai', 'candidate', 'ai', 'candidate', 'ai']);
     expect(seen[0]?.text).toBe('文本 3');

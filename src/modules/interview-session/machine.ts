@@ -276,8 +276,11 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
 
     const tick = () => {
       if (token !== epoch || result) return;
-      void attempt(token);
-      cadenceCancellation = deps.scheduler.schedule(tick, CADENCE);
+      void attempt(token).then(() => {
+        if (token === epoch && !result && state === 'reconnecting') {
+          cadenceCancellation = deps.scheduler.schedule(tick, CADENCE);
+        }
+      });
     };
     cadenceCancellation = deps.scheduler.schedule(tick, CADENCE);
     return attempt(token);
