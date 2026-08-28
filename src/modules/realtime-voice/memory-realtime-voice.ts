@@ -81,6 +81,11 @@ export class MemoryRealtimeVoice implements RealtimeVoice {
     resolve: (connection: MemoryRealtimeConnection) => void;
     reject: (error: Error) => void;
   }> = [];
+  private deferredAfterFailures: Array<{
+    promise: Promise<MemoryRealtimeConnection>;
+    resolve: (connection: MemoryRealtimeConnection) => void;
+    reject: (error: Error) => void;
+  }> = [];
 
   enqueueConnectFailure(error: Error) {
     this.failures.push(error);
@@ -106,12 +111,34 @@ export class MemoryRealtimeVoice implements RealtimeVoice {
     };
   }
 
+  deferNextConnectAfterQueuedFailures() {
+    let resolve!: (connection: MemoryRealtimeConnection) => void;
+    let reject!: (error: Error) => void;
+    const promise = new Promise<MemoryRealtimeConnection>((accept, decline) => {
+      resolve = accept;
+      reject = decline;
+    });
+    this.deferredAfterFailures.push({ promise, resolve, reject });
+
+    return {
+      resolve: () => {
+        const connection = new MemoryRealtimeConnection();
+        this.connections.push(connection);
+        resolve(connection);
+        return connection;
+      },
+      reject,
+    };
+  }
+
   async connect(input: RealtimeConnectInput): Promise<MemoryRealtimeConnection> {
     this.connectInputs.push(structuredClone(input));
     const pending = this.deferred.shift();
     if (pending) return pending.promise;
     const failure = this.failures.shift();
     if (failure) throw failure;
+    const pendingAfterFailures = this.deferredAfterFailures.shift();
+    if (pendingAfterFailures) return pendingAfterFailures.promise;
     const connection = new MemoryRealtimeConnection();
     this.connections.push(connection);
     return connection;

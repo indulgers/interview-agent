@@ -191,3 +191,62 @@ Test Files  6 passed (6)
 Generating route types...
 ✓ Types generated successfully
 ```
+
+## Fix round 4 — independent reconnect cadence
+
+- Root cause: the cadence callback invoked `attempt(token)` and did not schedule its successor until that promise settled. A hung cadence attempt therefore prevented all later cadence attempts.
+- The cadence callback now schedules its successor before starting its attempt. A successful current-epoch attempt still clears the pending cadence cancellation; epoch and attempt guards still close late connections without subscribing or injecting progress.
+- Added an adapter control that places a deferred connection after explicitly queued failures, so the test can make the immediate reconnect fail, leave the first cadence connection unresolved, and prove the next cadence still connects.
+
+### RED (captured before the scheduler change)
+
+```text
+./node_modules/.bin/vitest run src/modules/interview-session/machine.test.ts --testTimeout 5000
+
+ FAIL  src/modules/interview-session/machine.test.ts > InterviewSession > keeps reconnect attempts on cadence while the first cadence connection hangs
+AssertionError: expected [ { …(2) }, { …(2) }, { …(2) } ] to have a length of 4 but got 3
+
+- Expected
++ Received
+
+- 4
++ 3
+
+ ❯ src/modules/interview-session/machine.test.ts:250:33
+    248|
+    249|     time.advance(2_000); await flush();
+    250|     expect(voice.connectInputs).toHaveLength(4);
+       |                                 ^
+    251|     expect(voice.connections).toHaveLength(2);
+    252|     expect(session.view().state).toBe('listening');
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 34 passed (35)
+```
+
+### GREEN
+
+Focused regression verification:
+
+```text
+./node_modules/.bin/vitest run src/modules/interview-session/machine.test.ts --testTimeout 5000
+
+Test Files  1 passed (1)
+     Tests  35 passed (35)
+```
+
+Full verification:
+
+```text
+./node_modules/.bin/vitest run && ./node_modules/.bin/next typegen && ./node_modules/.bin/tsc --noEmit && ./node_modules/.bin/eslint . && git diff --check
+
+Test Files  6 passed (6)
+     Tests  58 passed (58)
+Generating route types...
+✓ Types generated successfully
+```
+
+### Fix-round self-review
+
+- The only repeating cadence chain is created by `tick`: each callback replaces its consumed cancellation with one future callback before starting one attempt.
+- Any accepted connection clears that future callback. Older concurrent attempts fail the attempt-ID guard, are closed, never subscribe, never inject progress, and cannot mutate history or session state.

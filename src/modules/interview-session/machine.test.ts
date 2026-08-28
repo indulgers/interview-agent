@@ -189,7 +189,7 @@ describe('InterviewSession', () => {
     const delayedReconnect = voice.deferNextConnect();
     voice.emit({ type: 'connection', state: 'disconnected', at: 1_000 }); await flush();
     expect(session.view().state).toBe('reconnecting');
-    time.advance(10_000); await flush();
+    time.advance(2_000); await flush();
     expect(session.view().activeDurationMs).toBe(1_000);
     expect(session.view().state).toBe('listening');
     expect(voice.connections).toHaveLength(2);
@@ -200,6 +200,8 @@ describe('InterviewSession', () => {
       pendingFollowUps: [],
       updatedThroughSequence: 0,
     }]);
+    time.advance(8_000); await flush();
+    expect(session.view().activeDurationMs).toBe(9_000);
     const staleReconnect = delayedReconnect.resolve();
     await flush();
     expect(staleReconnect.closed).toBe(true);
@@ -230,6 +232,36 @@ describe('InterviewSession', () => {
     expect(lateConnection.closed).toBe(true);
     await lateConnection.emit({ type: 'connection', state: 'disconnected', at: 4_000 });
     await flush();
+    expect(session.view().state).toBe('listening');
+  });
+
+  it('keeps reconnect attempts on cadence while the first cadence connection hangs', async () => {
+    const { time, history, voice, session } = await started();
+    voice.enqueueConnectFailure(new Error('immediate reconnect is offline'));
+    const firstReconnect = voice.deferNextConnectAfterQueuedFailures();
+
+    await voice.emit({ type: 'connection', state: 'disconnected', at: 0 });
+    expect(session.view().state).toBe('reconnecting');
+    expect(voice.connectInputs).toHaveLength(2);
+
+    time.advance(2_000); await flush();
+    expect(voice.connectInputs).toHaveLength(3);
+    expect(session.view().state).toBe('reconnecting');
+
+    time.advance(2_000); await flush();
+    expect(voice.connectInputs).toHaveLength(4);
+    expect(voice.connections).toHaveLength(2);
+    expect(session.view().state).toBe('listening');
+
+    time.advance(10_000); await flush();
+    expect(voice.connectInputs).toHaveLength(4);
+
+    const lateConnection = firstReconnect.resolve();
+    await flush();
+    expect(lateConnection.closed).toBe(true);
+    expect(lateConnection.injectedProgress).toEqual([]);
+    await lateConnection.emit({ type: 'final_turn', providerTurnId: 'stale-turn', speaker: 'candidate', text: '不应写入', startedAt: 0, endedAt: 1 });
+    expect(history.turns).toEqual([]);
     expect(session.view().state).toBe('listening');
   });
 
