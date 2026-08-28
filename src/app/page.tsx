@@ -1,9 +1,11 @@
+import Link from 'next/link';
+
 export default function HomePage() {
   return (
     <main className="home-shell">
       <nav aria-label="主导航" className="home-nav">
         <span className="brand">AI 模拟面试</span>
-        <a href="#history">历史记录</a>
+        <Link href="/history">历史记录</Link>
       </nav>
 
       <section className="hero" aria-labelledby="home-title">
@@ -12,9 +14,9 @@ export default function HomePage() {
         <p className="intro">
           进行一场 45 分钟的中文模拟面试。AI 面试官会围绕项目经历、全栈能力与 Agent 实践持续追问。
         </p>
-        <a className="primary-action" href="/interview">
+        <Link className="primary-action" href="/interview">
           开始模拟面试
-        </a>
+        </Link>
       </section>
 
       <section className="session-note" id="start" aria-label="模拟面试说明">
