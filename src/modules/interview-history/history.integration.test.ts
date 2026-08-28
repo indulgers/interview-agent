@@ -12,6 +12,10 @@ const databases: Array<{ handle: ReturnType<typeof createDatabase>; directory: s
 const snapshot: ContentSnapshot = {
   version: '2026-08-27',
   hash: 'a'.repeat(64),
+  candidateProfileVersion: 'profile-v1',
+  candidateProfileHash: 'b'.repeat(64),
+  interviewBriefVersion: 'brief-v1',
+  interviewBriefHash: 'c'.repeat(64),
   candidateProfile: 'candidate profile at session start',
   interviewBrief: 'interview brief at session start',
 };
@@ -46,9 +50,17 @@ describe('InterviewHistory', () => {
     expect(detail?.snapshot).toEqual(snapshot);
   });
 
+  it('rejects malformed boundary values before writing', async () => {
+    const history = newHistory();
+    await expect(history.start({ snapshot, startedAt: 1, targetDurationMs: 1.5 })).rejects.toThrow();
+    const id = await history.start({ snapshot, startedAt: 1, targetDurationMs: 2_700_000 });
+    await expect(history.appendFinalTurn({ sessionId: id, providerTurnId: 'x', sequence: 1, speaker: 'candidate', text: 'x', startedAt: 3, endedAt: 2 })).rejects.toThrow();
+    await expect(history.finish(id, 'completed', 'complete', -1)).rejects.toThrow();
+  });
+
   it('appends final turns in sequence order and deduplicates a provider turn id per session', async () => {
     const history = newHistory();
-    const id = await history.start({ snapshot });
+    const id = await history.start({ snapshot, startedAt: 1, targetDurationMs: 2_700_000 });
     expect(await history.appendFinalTurn({
       sessionId: id,
       providerTurnId: 'provider-1',
@@ -84,16 +96,16 @@ describe('InterviewHistory', () => {
 
   it('allows exactly one transition from in-progress to a terminal result', async () => {
     const history = newHistory();
-    const id = await history.start({ snapshot, startedAt: new Date('2026-08-28T01:00:00Z') });
-    await history.finish(id, 'completed', 'complete');
-    await expect(history.finish(id, 'cancelled', 'missing')).rejects.toThrow('已结束');
+    const id = await history.start({ snapshot, startedAt: new Date('2026-08-28T01:00:00Z'), targetDurationMs: 2_700_000 });
+    await history.finish(id, 'completed', 'complete', 1234);
+    await expect(history.finish(id, 'cancelled', 'missing', 2)).rejects.toThrow('已结束');
     expect((await history.detail(id))?.session.result).toBe('completed');
   });
 
   it('surfaces session-level transcript incompleteness in history summaries', async () => {
     const history = newHistory();
-    const id = await history.start({ snapshot });
-    await history.finish(id, 'interrupted', 'missing');
+    const id = await history.start({ snapshot, startedAt: 1, targetDurationMs: 2_700_000 });
+    await history.finish(id, 'interrupted', 'missing', 0);
 
     expect((await history.list())[0]?.hasTranscriptGap).toBe(true);
     expect((await history.detail(id))?.session.hasTranscriptGap).toBe(true);
@@ -101,9 +113,9 @@ describe('InterviewHistory', () => {
 
   it('recovers only abandoned in-progress sessions as interrupted', async () => {
     const history = newHistory();
-    const abandoned = await history.start({ snapshot });
-    const completed = await history.start({ snapshot });
-    await history.finish(completed, 'completed', 'complete');
+    const abandoned = await history.start({ snapshot, startedAt: 1, targetDurationMs: 2_700_000 });
+    const completed = await history.start({ snapshot, startedAt: 1, targetDurationMs: 2_700_000 });
+    await history.finish(completed, 'completed', 'complete', 10);
 
     expect(await history.recoverAbandoned()).toBe(1);
     expect((await history.detail(abandoned))?.session.result).toBe('interrupted');
@@ -112,9 +124,10 @@ describe('InterviewHistory', () => {
 
   it('stores feedback retry state independently from the session result', async () => {
     const history = newHistory();
-    const id = await history.start({ snapshot });
-    await history.appendFinalTurn({ sessionId: id, providerTurnId: 'candidate-1', sequence: 1, speaker: 'candidate', text: '回答' });
-    await history.finish(id, 'completed', 'complete');
+    const id = await history.start({ snapshot, startedAt: 1, targetDurationMs: 2_700_000 });
+    await history.appendFinalTurn({ sessionId: id, providerTurnId: 'candidate-1', sequence: 1, speaker: 'candidate', text: '回答', startedAt: 1, endedAt: 2 });
+    await history.finish(id, 'completed', 'complete', 10);
+    await history.setFeedback(id, { status: 'generating' });
     await history.setFeedback(id, { status: 'failed', failureType: 'model_timeout' });
     expect((await history.detail(id))?.feedback?.status).toBe('failed');
     await history.setFeedback(id, { status: 'generating' });
@@ -125,8 +138,10 @@ describe('InterviewHistory', () => {
 
   it('deletes a session and all dependent rows atomically', async () => {
     const history = newHistory();
-    const id = await history.start({ snapshot });
-    await history.appendFinalTurn({ sessionId: id, providerTurnId: 'turn-1', sequence: 1, speaker: 'candidate', text: '回答' });
+    const id = await history.start({ snapshot, startedAt: 1, targetDurationMs: 2_700_000 });
+    await history.appendFinalTurn({ sessionId: id, providerTurnId: 'turn-1', sequence: 1, speaker: 'candidate', text: '回答', startedAt: 1, endedAt: 2 });
+    await history.finish(id, 'completed', 'complete', 10);
+    await history.setFeedback(id, { status: 'generating' });
     await history.setFeedback(id, { status: 'failed', failureType: 'invalid_output' });
     await history.delete(id);
     expect(await history.detail(id)).toBeNull();

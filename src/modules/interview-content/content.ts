@@ -175,6 +175,10 @@ export function createContentSnapshot(input?: ContentSource | string, interviewB
   return Object.freeze({
     version: CONTENT_VERSION,
     hash: createHash('sha256').update(canonicalPayload, 'utf8').digest('hex'),
+    candidateProfileVersion: CONTENT_VERSION,
+    candidateProfileHash: createHash('sha256').update(candidateProfile, 'utf8').digest('hex'),
+    interviewBriefVersion: CONTENT_VERSION,
+    interviewBriefHash: createHash('sha256').update(brief, 'utf8').digest('hex'),
     candidateProfile,
     interviewBrief: brief,
   });

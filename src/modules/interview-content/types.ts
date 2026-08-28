@@ -11,6 +11,10 @@ export interface InterviewProgress {
 export interface ContentSnapshot {
   version: string;
   hash: string;
+  candidateProfileVersion: string;
+  candidateProfileHash: string;
+  interviewBriefVersion: string;
+  interviewBriefHash: string;
   candidateProfile: string;
   interviewBrief: string;
 }

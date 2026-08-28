@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "3b8f6691-6a43-49ee-9c05-04bc129e6153",
+  "id": "5a01d209-b7f3-471f-8b7a-c9bce36ad57e",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "content_snapshots": {
@@ -35,6 +35,34 @@
           "notNull": true,
           "autoincrement": false
         },
+        "candidate_profile_version": {
+          "name": "candidate_profile_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "candidate_profile_hash": {
+          "name": "candidate_profile_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "interview_brief_version": {
+          "name": "interview_brief_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "interview_brief_hash": {
+          "name": "interview_brief_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
         "candidate_profile": {
           "name": "candidate_profile",
           "type": "text",
@@ -50,7 +78,15 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "content_snapshots_session_id_idx": {
+          "name": "content_snapshots_session_id_idx",
+          "columns": [
+            "session_id"
+          ],
+          "isUnique": true
+        }
+      },
       "foreignKeys": {
         "content_snapshots_session_id_interview_sessions_id_fk": {
           "name": "content_snapshots_session_id_interview_sessions_id_fk",
@@ -202,7 +238,12 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "checkConstraints": {}
+      "checkConstraints": {
+        "interview_sessions_result_check": {
+          "name": "interview_sessions_result_check",
+          "value": "\"interview_sessions\".\"result\" in ('in_progress','completed','interrupted','cancelled')"
+        }
+      }
     },
     "interview_turns": {
       "name": "interview_turns",
@@ -253,14 +294,14 @@
           "name": "started_at",
           "type": "integer",
           "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "autoincrement": false
         },
         "ended_at": {
           "name": "ended_at",
           "type": "integer",
           "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "autoincrement": false
         },
         "has_gap": {
@@ -278,6 +319,14 @@
           "columns": [
             "session_id",
             "provider_turn_id"
+          ],
+          "isUnique": true
+        },
+        "interview_turns_session_sequence_idx": {
+          "name": "interview_turns_session_sequence_idx",
+          "columns": [
+            "session_id",
+            "sequence"
           ],
           "isUnique": true
         }

@@ -52,4 +52,19 @@ Complete. SQLite persistence for immutable interview sessions, final transcript 
 ## Concerns
 
 - The application bootstrap must call `migrateDatabase()` once after opening the production database; the client intentionally does not run migrations as a hidden side effect.
-- `StartSession` accepts either `snapshot` or `contentSnapshot` for compatibility with the content module naming; production callers should use `snapshot`.
+- `StartSession` requires the canonical `snapshot` field and final turns require both provider timestamps.
+
+## Review fix round 1
+
+- Extended `ContentSnapshot` and the immutable snapshot row with separate candidate-profile and interview-brief version/hash provenance. `InterviewContent` computes those SHA-256 values at snapshot creation time.
+- Changed `finish` to require a validated effective `actualDurationMs` from `InterviewSession`; abandoned recovery now leaves duration null because wall-clock elapsed time includes pauses/unknown downtime.
+- Added boundary validation for IDs, text, timestamps, sequence/target/duration integers, snapshot hashes/content, enum values, and turn end-time ordering. Turn timestamps are required by both types and SQL schema.
+- Added feedback eligibility and transition rules, including candidate-answer requirement, structured completed feedback, nonempty failure type, stale-field clearing, and failed-to-generating retry.
+- Added one-snapshot-per-session and one-sequence-per-session uniqueness constraints, database conflict handling for provider-turn retries, and session-level transcript-gap reporting.
+- Replaced the unpublished initial migration with a regenerated migration containing provenance columns, uniqueness indexes, required turn timestamps, and the session-result check constraint.
+
+Fix-round TDD evidence:
+
+- RED: provenance assertions failed because detail omitted the four source-specific fields; GREEN after schema, migration, and detail mapping changes.
+- The malformed target/timestamp/duration tests now exercise the new boundary validators; GREEN focused history run passed 8 tests.
+- RED: the existing direct `pending → failed` test exposed the enforced feedback state machine; the test was corrected to exercise `pending → generating → failed`, then GREEN passed.

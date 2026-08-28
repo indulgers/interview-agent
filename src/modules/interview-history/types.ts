@@ -5,15 +5,14 @@ export type DateLike = Date | number;
 export type SessionResult = 'in_progress' | 'completed' | 'interrupted' | 'cancelled';
 export type TranscriptCompleteness = 'complete' | 'missing';
 export type FeedbackStatus = 'pending' | 'generating' | 'completed' | 'failed' | 'not_applicable';
-export type TurnSpeaker = 'candidate' | 'ai' | 'assistant';
+export type TurnSpeaker = 'candidate' | 'ai';
 
 export interface StartSession {
   /** A caller may provide an id for replayable integration tests; production normally omits it. */
   id?: SessionId;
-  startedAt?: DateLike;
-  targetDurationMs?: number;
-  snapshot?: ContentSnapshot;
-  contentSnapshot?: ContentSnapshot;
+  startedAt: DateLike;
+  targetDurationMs: number;
+  snapshot: ContentSnapshot;
 }
 
 export interface FinalTurn {
@@ -22,10 +21,9 @@ export interface FinalTurn {
   sequence: number;
   speaker: TurnSpeaker;
   text: string;
-  startedAt?: DateLike;
-  endedAt?: DateLike;
+  startedAt: DateLike;
+  endedAt: DateLike;
   hasGap?: boolean;
-  transcriptCompleteness?: TranscriptCompleteness;
 }
 
 export interface FeedbackUpdate {
@@ -43,7 +41,6 @@ export interface SessionSummary {
   actualDurationMs: number | null;
   result: SessionResult;
   completeness: TranscriptCompleteness;
-  transcriptCompleteness: TranscriptCompleteness;
   feedbackStatus: FeedbackStatus;
   hasTranscriptGap: boolean;
 }
@@ -76,7 +73,7 @@ export interface SessionDetail {
 export interface InterviewHistory {
   start(input: StartSession): Promise<SessionId>;
   appendFinalTurn(input: FinalTurn): Promise<'inserted' | 'duplicate'>;
-  finish(id: SessionId, result: Exclude<SessionResult, 'in_progress'>, completeness: TranscriptCompleteness): Promise<void>;
+  finish(id: SessionId, result: Exclude<SessionResult, 'in_progress'>, completeness: TranscriptCompleteness, actualDurationMs: number): Promise<void>;
   setFeedback(id: SessionId, update: FeedbackUpdate): Promise<void>;
   list(): Promise<SessionSummary[]>;
   detail(id: SessionId): Promise<SessionDetail | null>;
