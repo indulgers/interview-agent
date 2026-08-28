@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { createContentSnapshot } from '../interview-content/content';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { createDatabase, closeDatabase, migrateDatabase } from '../../db/client';
+import { createInterviewHistory } from '../interview-history/history';
 import type { InterviewHistory, StartSession, FinalTurn } from '../interview-history/types';
 import { MemoryRealtimeVoice } from '../realtime-voice/memory-realtime-voice';
 import type { Clock, Scheduler } from './types';
@@ -43,7 +48,7 @@ class MemoryHistory implements InterviewHistory {
   async recoverAbandoned() { return 0; }
 }
 
-async function flush() { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); }
+async function flush() { await new Promise<void>((resolve) => setImmediate(resolve)); await new Promise<void>((resolve) => setImmediate(resolve)); }
 
 async function started() {
   const time = new FakeTime();
@@ -55,6 +60,21 @@ async function started() {
 }
 
 describe('InterviewSession', () => {
+  it('serializes burst final events against the real SQLite history sequence invariant', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'session-burst-'));
+    const handle = createDatabase(path.join(directory, 'history.sqlite')); migrateDatabase(handle);
+    try {
+      const time = new FakeTime(); const voice = new MemoryRealtimeVoice();
+      const session = createInterviewSession({ clock: time, scheduler: time, history: createInterviewHistory(handle.db), voice, snapshot: createContentSnapshot() });
+      await session.start({ microphone: true, camera: true });
+      await Promise.all([
+        voice.emit({ type: 'final_turn', providerTurnId: 'burst-1', speaker: 'candidate', text: '第一轮', startedAt: 1, endedAt: 2 }),
+        voice.emit({ type: 'final_turn', providerTurnId: 'burst-2', speaker: 'ai', text: '第二轮', startedAt: 3, endedAt: 4 }),
+      ]);
+      const detail = await createInterviewHistory(handle.db).detail((await createInterviewHistory(handle.db).list())[0]!.id);
+      expect(detail?.turns.map((turn) => turn.sequence)).toEqual([1, 2]);
+    } finally { closeDatabase(handle); fs.rmSync(directory, { recursive: true, force: true }); }
+  });
   it('requires both microphone and camera before connecting', async () => {
     const time = new FakeTime(); const history = new MemoryHistory(); const voice = new MemoryRealtimeVoice();
     const session = createInterviewSession({ clock: time, scheduler: time, history, voice, snapshot: createContentSnapshot() });

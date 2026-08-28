@@ -12,11 +12,13 @@ export interface InterviewSessionView {
   activeDurationMs: number;
   allowNewTopics: boolean;
   responseHint: boolean;
+  error: string | null;
 }
 export interface ProgressSummaryInput {
   progress: InterviewProgress;
   finalTurnCount: number;
   phase: InterviewProgress['phase'];
+  recentTurns: Array<{ speaker: 'candidate' | 'ai'; text: string; providerTurnId: string }>;
 }
 export type ProgressSummarizer = (input: ProgressSummaryInput) => InterviewProgress;
 export interface InterviewSessionDependencies {

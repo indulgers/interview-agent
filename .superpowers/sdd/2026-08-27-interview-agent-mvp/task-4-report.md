@@ -64,3 +64,11 @@ Output: 14 tests passed.
 
 - The memory adapter is intentionally test-only. Task 5 still needs the concrete browser/WebRTC adapter and its boundary validation.
 - The injected `ProgressSummarizer` establishes the orchestration seam; richer semantic extraction of topics/evidence remains the responsibility of the future summarizer implementation.
+
+## Fix round 1
+
+- `RealtimeConnection.subscribe` now accepts an awaited listener; the memory adapter awaits listener completion and exposes programmable operation rejection for close/cancel/inject behavior.
+- The session serializes events through one queue, uses connection epochs to ignore stale connects/events, retries reconnect every two seconds until the 20-second deadline, and safely closes superseded connections.
+- Terminal persistence occurs even when close fails and only marks the in-memory terminal view after `InterviewHistory.finish` completes.
+- Default progress now derives bounded topics, candidate evidence, and follow-ups from recent final-turn contents. The realtime instructions explicitly allow polite interruption for overlong, vague, or off-topic answers.
+- Added a real temporary SQLite burst-event regression: two concurrent final events persist strictly as sequences 1 and 2.

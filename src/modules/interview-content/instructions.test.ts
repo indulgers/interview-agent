@@ -12,6 +12,7 @@ describe('buildRealtimeInstructions', () => {
     expect(instructions).toContain('不得教学');
     expect(instructions).toContain('不得提供答案提示');
     expect(instructions).toContain('不得作出招聘或录用结论');
+    expect(instructions).toContain('过长、空泛或偏题时，可以礼貌打断');
   });
 
   it('serializes covered topics, evidence, pending follow-ups, phase, and sequence for reconnection', () => {

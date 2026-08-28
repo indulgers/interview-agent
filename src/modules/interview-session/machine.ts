@@ -1,157 +1,33 @@
 import { buildRealtimeInstructions } from '../interview-content/instructions';
 import { createInitialProgress, phaseAt } from '../interview-content/progress';
 import type { InterviewProgress } from '../interview-content/types';
-import type { TranscriptCompleteness } from '../interview-history/types';
 import type { RealtimeConnection, VoiceEvent } from '../realtime-voice/port';
 import type { InterviewSession, InterviewSessionDependencies, InterviewSessionView, SessionState } from './types';
 
-const RESPONSE_HINT_MS = 8_000;
-const RESPONSE_RETRY_MS = 15_000;
-const RECONNECT_LIMIT_MS = 20_000;
-const NEW_TOPIC_CUTOFF_MS = 40 * 60_000 + 30_000;
-const SOFT_CLOSE_MS = 45 * 60_000;
-const HARD_STOP_MS = 47 * 60_000;
+const HINT=8_000, RESPONSE=15_000, RECONNECT=20_000, CADENCE=2_000, DRAIN=5_000, CUTOFF=2_430_000, SOFT=2_700_000, HARD=2_820_000;
+type Recent={speaker:'candidate'|'ai';text:string;providerTurnId:string};
+function defaultSummary(input:{progress:InterviewProgress;finalTurnCount:number;phase:InterviewProgress['phase'];recentTurns:Recent[]}):InterviewProgress { const r=input.recentTurns.slice(-8); return {...input.progress,phase:input.phase,updatedThroughSequence:input.finalTurnCount,coveredTopics:r.map(x=>x.text.replace(/\s+/g,' ').slice(0,80)),evidence:r.filter(x=>x.speaker==='candidate').map(x=>({claim:x.text.slice(0,120),observation:'候选人最终回答',turnIds:[x.providerTurnId]})),pendingFollowUps:r.filter(x=>x.speaker==='candidate').slice(-3).map(x=>`追问：${x.text.slice(0,80)}`)}; }
 
-function defaultSummary(input: { progress: InterviewProgress; finalTurnCount: number; phase: InterviewProgress['phase'] }): InterviewProgress {
-  return { ...input.progress, phase: input.phase, updatedThroughSequence: input.finalTurnCount };
-}
-
-/** Provider- and persistence-neutral deterministic interview orchestration. */
-export function createInterviewSession(deps: InterviewSessionDependencies): InterviewSession {
-  let state: SessionState = 'ready';
-  let result: InterviewSessionView['result'] = null;
-  let sessionId: string | null = null;
-  let connection: RealtimeConnection | null = null;
-  let unsubscribe: (() => void) | null = null;
-  let activeSince: number | null = null;
-  let activeDuration = 0;
-  let finalTurnCount = 0;
-  let hasCandidateAnswer = false;
-  let hasGap = false;
-  let progress = createInitialProgress();
-  let responseHint = false;
-  let responseRetryUsed = false;
-  let allowNewTopics = true;
-  let responseHintCancel: (() => void) | null = null;
-  let responseRetryCancel: (() => void) | null = null;
-  let reconnectCancel: (() => void) | null = null;
-  let budgetCancel: (() => void) | null = null;
-
-  const elapsed = () => activeDuration + (activeSince === null ? 0 : deps.clock.now() - activeSince);
-  const clear = (cancel: (() => void) | null) => cancel?.();
-  const clearResponseTimers = () => { clear(responseHintCancel); clear(responseRetryCancel); responseHintCancel = null; responseRetryCancel = null; responseHint = false; };
-  const pauseClock = () => { if (activeSince !== null) { activeDuration += deps.clock.now() - activeSince; activeSince = null; } clear(budgetCancel); budgetCancel = null; };
-  const resumeClock = () => { if (activeSince === null && !result) { activeSince = deps.clock.now(); scheduleBudget(); } };
-
-  function view(): InterviewSessionView { return { state, result, activeDurationMs: elapsed(), allowNewTopics, responseHint }; }
-  function phase() { return phaseAt(elapsed()); }
-  async function injectProgress(): Promise<void> {
-    if (!connection) return;
-    progress = (deps.summarizeProgress ?? defaultSummary)({ progress, finalTurnCount, phase: phase() });
-    await connection.injectProgress(progress);
-  }
-  function scheduleBudget(): void {
-    clear(budgetCancel);
-    const now = elapsed();
-    const checkpoints = [5 * 60_000, 20 * 60_000, 32 * 60_000, NEW_TOPIC_CUTOFF_MS, 42 * 60_000, SOFT_CLOSE_MS, HARD_STOP_MS];
-    const next = checkpoints.find((point) => point > now);
-    if (next === undefined) return;
-    budgetCancel = deps.scheduler.schedule(() => { void handleBudget(); }, next - now);
-  }
-  async function handleBudget(): Promise<void> {
-    if (result || activeSince === null) return;
-    const before = progress.phase;
-    const current = elapsed();
-    if (current >= NEW_TOPIC_CUTOFF_MS) allowNewTopics = false;
-    if (current >= HARD_STOP_MS) { await finish('completed'); return; }
-    if (current >= SOFT_CLOSE_MS) state = 'closing';
-    const nextPhase = phase();
-    scheduleBudget();
-    if (nextPhase !== before) await injectProgress();
-  }
-  async function finish(nextResult: NonNullable<InterviewSessionView['result']>): Promise<void> {
-    if (result) return;
-    if (nextResult === 'completed' && !hasCandidateAnswer) nextResult = 'cancelled';
-    clearResponseTimers(); clear(reconnectCancel); reconnectCancel = null; pauseClock();
-    result = nextResult; state = 'finished';
-    unsubscribe?.(); unsubscribe = null;
-    if (connection) await connection.close();
-    if (sessionId) await deps.history.finish(sessionId, nextResult, hasGap ? 'missing' : 'complete' as TranscriptCompleteness, activeDuration);
-  }
-  async function replaceConnection(): Promise<void> {
-    if (result) return;
-    try {
-      const next = await deps.voice.connect({ instructions: buildRealtimeInstructions(deps.snapshot, progress), resumeFromSequence: finalTurnCount });
-      if (result) { await next.close(); return; }
-      unsubscribe?.();
-      connection = next;
-      unsubscribe = connection.subscribe((event) => { void handleEvent(event); });
-      clear(reconnectCancel); reconnectCancel = null;
-      await injectProgress();
-      state = elapsed() >= SOFT_CLOSE_MS ? 'closing' : 'listening';
-      resumeClock();
-    } catch {
-      // The deadline installed by beginReconnect owns terminal failure.
-    }
-  }
-  function beginReconnect(): void {
-    if (result || state === 'reconnecting') return;
-    clearResponseTimers(); pauseClock(); state = 'reconnecting';
-    unsubscribe?.(); unsubscribe = null;
-    if (connection) void connection.close();
-    clear(reconnectCancel);
-    reconnectCancel = deps.scheduler.schedule(() => { void finish('interrupted'); }, RECONNECT_LIMIT_MS);
-    void replaceConnection();
-  }
-  function startResponseTimeout(): void {
-    clearResponseTimers();
-    responseHintCancel = deps.scheduler.schedule(() => { responseHint = true; }, RESPONSE_HINT_MS);
-    responseRetryCancel = deps.scheduler.schedule(() => {
-      if (responseRetryUsed) { state = 'paused'; pauseClock(); return; }
-      responseRetryUsed = true; beginReconnect();
-    }, RESPONSE_RETRY_MS);
-  }
-  async function handleEvent(event: VoiceEvent): Promise<void> {
-    if (result) return;
-    switch (event.type) {
-      case 'connection': if (event.state === 'disconnected') beginReconnect(); break;
-      case 'candidate_speech':
-        if (event.state === 'started') { if (state === 'speaking') await connection?.cancelAssistantSpeech(); state = 'listening'; clearResponseTimers(); }
-        else startResponseTimeout();
-        break;
-      case 'assistant_speech':
-        clearResponseTimers(); state = event.state === 'started' ? 'speaking' : 'listening'; break;
-      case 'response':
-        if (event.state === 'started') { clearResponseTimers(); state = 'thinking'; }
-        else if (state === 'thinking') state = 'listening';
-        break;
-      case 'error':
-        if (event.category === 'configuration' || event.category === 'unrecoverable') await finish('interrupted'); else beginReconnect();
-        break;
-      case 'final_turn':
-        if (!sessionId) return;
-        const outcome = await deps.history.appendFinalTurn({ sessionId, providerTurnId: event.providerTurnId, sequence: finalTurnCount + 1, speaker: event.speaker, text: event.text, startedAt: event.startedAt, endedAt: event.endedAt, hasGap: event.hasGap });
-        if (outcome === 'duplicate') return;
-        finalTurnCount++; hasCandidateAnswer ||= event.speaker === 'candidate'; hasGap ||= Boolean(event.hasGap);
-        if (finalTurnCount % 10 === 0) await injectProgress();
-        break;
-    }
-  }
-
-  return {
-    view,
-    async start(devices) {
-      if (!devices.microphone || !devices.camera) throw new Error('microphone and camera are required');
-      if (state !== 'ready') throw new Error('session has already started');
-      state = 'connecting';
-      const next = await deps.voice.connect({ instructions: buildRealtimeInstructions(deps.snapshot, progress), resumeFromSequence: 0 });
-      connection = next;
-      sessionId = await deps.history.start({ startedAt: deps.clock.now(), targetDurationMs: SOFT_CLOSE_MS, snapshot: deps.snapshot });
-      unsubscribe = connection.subscribe((event) => { void handleEvent(event); });
-      state = 'listening'; resumeClock();
-    },
-    async retry() { if (state === 'paused' || state === 'reconnecting') { state = 'reconnecting'; clear(reconnectCancel); reconnectCancel = deps.scheduler.schedule(() => { void finish('interrupted'); }, RECONNECT_LIMIT_MS); await replaceConnection(); } },
-    async signalEndOfAnswer() { await connection?.signalEndOfAnswer(); },
-    async end() { await finish(hasCandidateAnswer ? 'completed' : 'cancelled'); },
-  };
+export function createInterviewSession(deps:InterviewSessionDependencies):InterviewSession {
+ let state:SessionState='ready', result:InterviewSessionView['result']=null, error:string|null=null, id:string|null=null, connection:RealtimeConnection|null=null, unsub:(()=>void)|null=null;
+ let activeSince:number|null=null, active=0, sequence=0, candidate=false, gap=false, pending=false, progress=createInitialProgress(), hint=false, retried=false, allow=true, epoch=0, connecting=false;
+ const recent:Recent[]=[];
+ let hintC:(()=>void)|null=null,responseC:(()=>void)|null=null,reconnectC:(()=>void)|null=null,cadenceC:(()=>void)|null=null,budgetC:(()=>void)|null=null,drainC:(()=>void)|null=null, queue=Promise.resolve(), running=false;
+ const clear=(x:(()=>void)|null)=>x?.(), elapsed=()=>active+(activeSince===null?0:deps.clock.now()-activeSince), phase=()=>phaseAt(elapsed());
+ const pause=()=>{if(activeSince!==null){active+=deps.clock.now()-activeSince;activeSince=null;}clear(budgetC);budgetC=null;};
+ const enqueue=(f:()=>Promise<void>)=>{const work=running?queue.then(f,f):f();running=true;const tracked=work.catch(()=>{error='会话操作失败';if(!result){state='paused';pause();}});queue=tracked;void tracked.finally(()=>{if(queue===tracked)running=false;});return tracked;};
+ const clearResponse=()=>{clear(hintC);clear(responseC);hintC=responseC=null;hint=false;};
+ const view=():InterviewSessionView=>({state,result,activeDurationMs:elapsed(),allowNewTopics:allow,responseHint:hint,error});
+ async function safeClose(c:RealtimeConnection|null){if(c)try{await c.close();}catch{error='语音连接关闭失败';}}
+ async function inject(){if(!connection)return;try{progress=(deps.summarizeProgress??defaultSummary)({progress,finalTurnCount:sequence,phase:phase(),recentTurns:recent});await connection.injectProgress(progress);}catch{error='进度更新失败，将在下次检查点重试';}}
+ function scheduleBudget(){clear(budgetC);const next=[300000,1200000,1920000,CUTOFF,2520000,SOFT,HARD].find(x=>x>elapsed());if(next)budgetC=deps.scheduler.schedule(()=>void enqueue(budget),next-elapsed());}
+ const resume=()=>{if(activeSince===null&&!result){activeSince=deps.clock.now();scheduleBudget();}};
+ async function finalize(wanted:NonNullable<InterviewSessionView['result']>,missing:boolean){if(result||!id)return;clearResponse();clear(reconnectC);clear(cadenceC);clear(drainC);pause();epoch++;await safeClose(connection);const terminal=wanted==='completed'&&!candidate?'cancelled':wanted;await deps.history.finish(id,terminal,gap||missing?'missing':'complete',active);result=terminal;state='finished';unsub?.();unsub=null;}
+ async function budget(){if(result||activeSince===null)return;const before=progress.phase,now=elapsed();if(now>=CUTOFF)allow=false;if(now>=HARD){await finalize(candidate?'completed':'cancelled',pending);return;}if(now>=SOFT)state='closing';scheduleBudget();if(phase()!==before)await inject();}
+ async function attempt(token:number){if(connecting||result)return;connecting=true;try{const next=await deps.voice.connect({instructions:buildRealtimeInstructions(deps.snapshot,progress),resumeFromSequence:sequence});if(token!==epoch||result){await safeClose(next);return;}const old=connection;unsub?.();connection=next;unsub=next.subscribe(input=>enqueue(async()=>{if(token===epoch&&!result)await onEvent(input);}));if(old&&old!==next)await safeClose(old);clear(reconnectC);clear(cadenceC);await inject();state=elapsed()>=SOFT?'closing':'listening';resume();}catch{if(token===epoch&&!result)error='正在重连语音服务';}finally{connecting=false;}}
+ function reconnect():Promise<void>{if(result||state==='reconnecting')return Promise.resolve();clearResponse();pause();state='reconnecting';const token=++epoch;unsub?.();unsub=null;void safeClose(connection);clear(reconnectC);reconnectC=deps.scheduler.schedule(()=>void enqueue(()=>finalize('interrupted',pending)),RECONNECT);const tick=()=>{if(token!==epoch||result)return;void attempt(token);cadenceC=deps.scheduler.schedule(tick,CADENCE);};cadenceC=deps.scheduler.schedule(tick,CADENCE);return attempt(token);}
+ function timeout(){clearResponse();hintC=deps.scheduler.schedule(()=>{hint=true;},HINT);responseC=deps.scheduler.schedule(()=>{if(retried){state='paused';pause();}else{retried=true;reconnect();}},RESPONSE);}
+ async function onEvent(e:VoiceEvent){switch(e.type){case'connection':if(e.state==='disconnected')reconnect();break;case'candidate_speech':if(e.state==='started'){clearResponse();if(state==='speaking')try{await connection?.cancelAssistantSpeech();state='listening';}catch{error='打断失败，可重试';state='paused';pause();}else state='listening';}else{pending=true;timeout();}break;case'assistant_speech':clearResponse();retried=false;state=e.state==='started'?'speaking':'listening';break;case'response':if(e.state==='started'){clearResponse();state='thinking';}else if(state==='thinking'){retried=false;state='listening';}break;case'error':if(e.category==='ai_unavailable')reconnect();else await finalize('interrupted',pending);break;case'final_turn':if(!id)return;const out=await deps.history.appendFinalTurn({sessionId:id,providerTurnId:e.providerTurnId,sequence:sequence+1,speaker:e.speaker,text:e.text,startedAt:e.startedAt,endedAt:e.endedAt,hasGap:e.hasGap});if(result)return;if(out==='inserted'){sequence++;candidate ||= e.speaker==='candidate';gap ||= !!e.hasGap;recent.push({speaker:e.speaker,text:e.text,providerTurnId:e.providerTurnId});pending=false;if(sequence%10===0)await inject();}if(state==='closing'&&!pending)await finalize(candidate?'completed':'cancelled',false);break;}}
+ async function end(){await enqueue(async()=>{if(result)return;if(pending){state='closing';clear(drainC);drainC=deps.scheduler.schedule(()=>void enqueue(()=>finalize(candidate?'completed':'cancelled',true)),DRAIN);}else await finalize(candidate?'completed':'cancelled',false);});}
+ return {view,async start(devices){if(!devices.microphone||!devices.camera)throw new Error('microphone and camera are required');if(state!=='ready')throw new Error('session has already started');state='connecting';const token=++epoch;try{const next=await deps.voice.connect({instructions:buildRealtimeInstructions(deps.snapshot,progress),resumeFromSequence:0});if(token!==epoch){await safeClose(next);return;}connection=next;try{id=await deps.history.start({startedAt:deps.clock.now(),targetDurationMs:SOFT,snapshot:deps.snapshot});}catch(cause){await safeClose(next);connection=null;state='ready';throw cause;}unsub=next.subscribe(e=>enqueue(()=>onEvent(e)));state='listening';resume();}catch(cause){if(state==='connecting')state='ready';throw cause;}},async retry(){await enqueue(async()=>{if(state==='paused'){retried=false;clearResponse();state='ready';await reconnect();}});},async signalEndOfAnswer(){try{await connection?.signalEndOfAnswer();}catch{error='结束回答辅助失败';}},end};
 }
