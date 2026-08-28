@@ -30,6 +30,7 @@ describe('POST /api/realtime/session', () => {
 
   it.each([
     ['missing SDP content type', 'text/plain', 'v=0\r\n'],
+    ['SDP-prefix content type', 'application/sdp-anything', 'v=0\r\n'],
     ['non-SDP body', 'application/sdp', 'not an offer'],
     ['oversized offer', 'application/sdp', `v=0\r\n${'a'.repeat(65_537)}`],
     ['offer oversized in UTF-8 bytes', 'application/sdp', `v=0\r\n${'测'.repeat(22_000)}`],
@@ -38,6 +39,37 @@ describe('POST /api/realtime/session', () => {
     const response = await postSession(new Request('http://localhost/api/realtime/session', { method: 'POST', headers: { 'content-type': contentType }, body }), { readEnv: () => env });
     expect(response.status).toBe(400);
     expect(await response.text()).toBe('无效的 SDP 建连请求。');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unsafe workspace identifier before constructing an upstream URL', async () => {
+    const fetch = vi.fn();
+    const response = await postSession(new Request('http://localhost/api/realtime/session', { method: 'POST', headers: { 'content-type': 'application/sdp' }, body: 'v=0\r\n' }), {
+      readEnv: () => ({ ...env, DASHSCOPE_WORKSPACE_ID: 'workspace-test.evil.example' }), fetch,
+    });
+    expect(response.status).toBe(500);
+    expect(await response.text()).toBe('实时语音服务配置不可用。');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['unexpected success MIME', new Response('v=0\r\na=answer\r\n', { headers: { 'content-type': 'application/json' } })],
+    ['non-SDP success body', new Response('not an SDP answer', { headers: { 'content-type': 'text/plain' } })],
+  ])('sanitizes %s', async (_label, upstream) => {
+    const response = await postSession(new Request('http://localhost/api/realtime/session', { method: 'POST', headers: { 'content-type': 'application/sdp' }, body: 'v=0\r\n' }), {
+      readEnv: () => env, fetch: vi.fn().mockResolvedValue(upstream),
+    });
+    expect(response.status).toBe(502);
+    expect(await response.text()).toBe('实时语音服务暂时不可用。');
+  });
+
+  it('rejects chunked offers once their UTF-8 byte budget is exceeded', async () => {
+    const fetch = vi.fn();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new TextEncoder().encode('v=0\r\n')); controller.enqueue(new TextEncoder().encode('测'.repeat(22_000))); controller.close(); },
+    });
+    const response = await postSession(new Request('http://localhost/api/realtime/session', { method: 'POST', headers: { 'content-type': 'application/sdp' }, body, duplex: 'half' } as RequestInit), { readEnv: () => env, fetch });
+    expect(response.status).toBe(400);
     expect(fetch).not.toHaveBeenCalled();
   });
 

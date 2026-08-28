@@ -30,7 +30,7 @@ export interface BailianPeerConnection {
 
 export interface BailianMediaTrack { enabled: boolean; stop(): void; }
 interface BailianMediaStream { getAudioTracks(): BailianMediaTrack[]; getTracks(): BailianMediaTrack[]; }
-interface BailianAudioElement { autoplay: boolean; srcObject: unknown; pause?(): void; remove?(): void; }
+interface BailianAudioElement { autoplay: boolean; srcObject: unknown; play?(): Promise<void>; pause?(): void; remove?(): void; }
 
 export interface BailianBrowserDependencies {
   createPeerConnection(): BailianPeerConnection;
@@ -58,7 +58,8 @@ export class BailianRealtimeVoice implements RealtimeVoice {
       if (!localTrack) throw new Error('No local audio track');
       peer = this.dependencies.createPeerConnection();
       const transceiver = peer.addTransceiver('audio', { direction: 'sendrecv' });
-      await transceiver.sender.replaceTrack(localTrack);
+      localTrack.enabled = false;
+      await transceiver.sender.replaceTrack(null);
       outbound = peer.createDataChannel('oai-events');
       if (outbound.label !== 'oai-events') throw new Error('Unexpected outbound data channel');
       audio = this.dependencies.createAudioElement();
@@ -78,19 +79,26 @@ export class BailianRealtimeVoice implements RealtimeVoice {
         inbound = channel;
         connection.setInboundChannel(channel);
       };
-      peer.ontrack = ({ streams }) => { audio!.srcObject = streams[0] ?? null; };
+      peer.ontrack = ({ streams }) => {
+        audio!.srcObject = streams[0] ?? null;
+        void audio!.play?.().catch(() => connection.reportPlaybackFailure());
+      };
       peer.onconnectionstatechange = () => connection.onConnectionStateChange();
 
       const offer = await peer.createOffer();
       if (!offer.sdp) throw new Error('Missing SDP offer');
+      const offerSdp = offer.sdp;
       await peer.setLocalDescription(offer);
       await waitForIce(peer, this.dependencies);
-      const response = await this.dependencies.fetch('/api/realtime/session', { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offer.sdp });
+      const response = await withBrowserTimeout(() => this.dependencies.fetch('/api/realtime/session', { method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: offerSdp }), this.dependencies);
       const answer = await response.text();
       if (!response.ok || !isSdp(answer)) throw new Error('Session negotiation failed');
       await peer.setRemoteDescription({ type: 'answer', sdp: answer });
       await waitForChannel(outbound, this.dependencies);
+      await connection.waitUntilConfigured();
       connection.sendSessionUpdate(input.instructions);
+      await transceiver.sender.replaceTrack(localTrack);
+      localTrack.enabled = true;
       return connection;
     } catch {
       inbound?.close(); outbound?.close(); peer?.close(); stream?.getTracks().forEach((track) => track.stop()); audio?.pause?.(); audio?.remove?.();
@@ -122,8 +130,10 @@ class BailianRealtimeConnection implements RealtimeConnection {
   private inbound: BailianDataChannel | undefined;
   private closed = false;
   private answerEnding = false;
-  private resolveSpeechStopped: (() => void) | undefined;
-  private readonly speechStopped = new Promise<void>((resolve) => { this.resolveSpeechStopped = resolve; });
+  private readyResolve!: () => void;
+  private readonly configured = new Promise<void>((resolve) => { this.readyResolve = resolve; });
+  private sessionCreated = false;
+  private answerEnd: { resolve: () => void; promise: Promise<void> } | undefined;
 
   constructor(
     private readonly dependencies: BailianBrowserDependencies,
@@ -140,13 +150,22 @@ class BailianRealtimeConnection implements RealtimeConnection {
 
   setInboundChannel(channel: BailianDataChannel) {
     this.inbound = channel;
-    channel.onmessage = (message) => { this.eventTail = this.eventTail.then(() => this.handleMessage(message.data)).catch(() => this.emit({ type: 'error', category: 'ai_unavailable', message: '实时语音服务暂时不可用。', at: this.dependencies.now() })); };
+    channel.onmessage = (message) => { this.eventTail = this.eventTail.then(() => this.handleMessage(message.data)).catch(() => { this.dependencies.onDiagnostic?.('provider-event-handler-failed'); }); };
+  }
+
+  async waitUntilConfigured() {
+    await withBrowserTimeout(() => this.configured, this.dependencies);
+  }
+
+  reportPlaybackFailure() {
+    this.dependencies.onDiagnostic?.('remote-audio-playback-failed');
+    void this.emitSafely({ type: 'error', category: 'ai_unavailable', message: '远端音频播放不可用。', at: this.dependencies.now() });
   }
 
   onConnectionStateChange() {
     if (this.peer.connectionState === 'failed' || this.peer.connectionState === 'closed') {
-      this.resolveSpeechStopped?.();
-      this.eventTail = this.eventTail.then(() => this.emit({ type: 'connection', state: 'disconnected', at: this.dependencies.now() }));
+      this.answerEnd?.resolve();
+      this.eventTail = this.eventTail.then(() => this.emitSafely({ type: 'connection', state: 'disconnected', at: this.dependencies.now() }));
     }
   }
 
@@ -154,7 +173,7 @@ class BailianRealtimeConnection implements RealtimeConnection {
     this.send({
       event_id: eventId(this.dependencies.now()), type: 'session.update', session: {
         model: MODEL, modalities: ['text', 'audio'], voice: this.voice,
-        audio: { input: { format: { type: 'pcm', sample_rate: 16000 } }, output: { format: { type: 'pcm', sample_rate: 24000 } } },
+        input_audio_format: 'pcm', output_audio_format: 'pcm',
         input_audio_transcription: { model: 'qwen3-asr-flash-realtime' },
         instructions, turn_detection: { type: 'semantic_vad', threshold: 0.5, silence_duration_ms: 800 },
       },
@@ -165,7 +184,11 @@ class BailianRealtimeConnection implements RealtimeConnection {
     if (this.closed || this.answerEnding || !this.localTrack.enabled) return;
     this.answerEnding = true;
     this.localTrack.enabled = false;
-    await Promise.all([this.speechStopped, this.dependencies.sleep(SILENCE_INTERVAL_MS)]);
+    let resolve!: () => void;
+    const stopped = new Promise<void>((accept) => { resolve = accept; });
+    this.answerEnd = { resolve, promise: stopped };
+    await Promise.all([Promise.race([stopped, this.dependencies.sleep(2_000)]), this.dependencies.sleep(SILENCE_INTERVAL_MS)]);
+    this.answerEnd = undefined;
     if (!this.closed) this.localTrack.enabled = true;
     this.answerEnding = false;
   }
@@ -185,7 +208,7 @@ class BailianRealtimeConnection implements RealtimeConnection {
   async close() {
     if (this.closed) return;
     this.closed = true;
-    this.resolveSpeechStopped?.();
+    this.answerEnd?.resolve();
     this.inbound?.close(); this.outbound.close(); this.stream.getTracks().forEach((track) => track.stop());
     this.audio.pause?.(); this.audio.srcObject = null; this.audio.remove?.(); this.peer.close();
     await this.eventTail;
@@ -196,13 +219,18 @@ class BailianRealtimeConnection implements RealtimeConnection {
     if (text === null) { this.dependencies.onDiagnostic?.('non-text-txt-event'); return; }
     let payload: unknown;
     try { payload = JSON.parse(text); } catch { this.dependencies.onDiagnostic?.('malformed-txt-event'); return; }
-    if (isObject(payload) && payload.type === 'input_audio_buffer.speech_stopped') this.resolveSpeechStopped?.();
+    if (isObject(payload) && payload.type === 'session.created') { this.sessionCreated = true; if (this.inbound) this.readyResolve(); }
+    if (isObject(payload) && payload.type === 'input_audio_buffer.speech_stopped') this.answerEnd?.resolve();
     const events = parseBailianEvent(payload, this.dependencies.now());
     if (events.length === 0) this.dependencies.onDiagnostic?.(isObject(payload) && typeof payload.type === 'string' ? `unknown-event:${payload.type}` : 'malformed-provider-event');
-    for (const event of events) await this.emit(event);
+    for (const event of events) await this.emitSafely(event);
   }
 
-  private async emit(event: VoiceEvent) { for (const listener of this.listeners) await listener(event); }
+  private async emitSafely(event: VoiceEvent) {
+    for (const listener of this.listeners) {
+      try { await listener(event); } catch { this.dependencies.onDiagnostic?.('voice-listener-failed'); }
+    }
+  }
 
   private send(payload: object) {
     if (this.outbound.readyState !== 'open') throw new Error('Outbound data channel is not open');
@@ -227,4 +255,7 @@ async function waitForIce(peer: BailianPeerConnection, dependencies: BailianBrow
   const deadline = dependencies.now() + ICE_TIMEOUT_MS;
   while (peer.iceGatheringState !== 'complete' && dependencies.now() < deadline) await dependencies.sleep(25);
   if (peer.iceGatheringState !== 'complete') throw new Error('ICE gathering timed out');
+}
+async function withBrowserTimeout<T>(operation: () => Promise<T>, dependencies: BailianBrowserDependencies) {
+  return Promise.race([operation(), dependencies.sleep(10_000).then(() => { throw new Error('timeout'); })]);
 }

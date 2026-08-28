@@ -29,7 +29,10 @@ class FakePeer implements BailianPeerConnection {
   async setLocalDescription() {}
   async setRemoteDescription(answer: { type: 'answer'; sdp: string }) { expect(answer).toEqual({ type: 'answer', sdp: 'v=0\r\na=answer\r\n' }); }
   close() { this.closed = true; this.connectionState = 'closed'; }
-  deliverInbound() { this.ondatachannel?.({ channel: this.inbound }); }
+  deliverInbound() {
+    this.ondatachannel?.({ channel: this.inbound });
+    this.inbound.emit(JSON.stringify({ type: 'session.created', session: { object: 'realtime.session', model: 'qwen3.5-omni-flash-realtime' } }));
+  }
   deliverRemoteAudio(stream: unknown) { this.ontrack?.({ streams: [stream] }); }
 }
 
@@ -82,7 +85,7 @@ describe('BailianRealtimeVoice', () => {
       type: 'session.update',
       session: {
         model: 'qwen3.5-omni-flash-realtime', modalities: ['text', 'audio'], voice: 'Tina', instructions: '只问一个技术问题。',
-        audio: { input: { format: { type: 'pcm', sample_rate: 16000 } }, output: { format: { type: 'pcm', sample_rate: 24000 } } },
+        input_audio_format: 'pcm', output_audio_format: 'pcm',
         input_audio_transcription: { model: 'qwen3-asr-flash-realtime' },
         turn_detection: { type: 'semantic_vad', threshold: 0.5, silence_duration_ms: 800 },
       },
@@ -113,6 +116,7 @@ describe('BailianRealtimeVoice', () => {
     await readyForPeer(peer);
     const wrongChannel = new FakeChannel('wrong-channel');
     peer.ondatachannel?.({ channel: wrongChannel });
+    peer.deliverInbound();
     const connection = await connecting;
     expect(wrongChannel.closed).toBe(true);
     expect(diagnostics).toEqual(['unexpected-data-channel:wrong-channel']);
@@ -128,7 +132,7 @@ describe('BailianRealtimeVoice', () => {
     peer.inbound.emit(JSON.stringify({ type: 'input_audio_buffer.speech_stopped', item_id: 'user-1', audio_end_ms: 100 }));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(track.enabled).toBe(false);
-    waits.shift()?.(); await ending;
+    waits.splice(0).forEach((resolve) => resolve()); await ending;
     expect(track.enabled).toBe(true);
     await connection.cancelAssistantSpeech();
     expect(JSON.parse(peer.outbound.sent.at(-1)!)).toMatchObject({ type: 'response.cancel' });

@@ -31,3 +31,7 @@ No real provider request was made, no credentials were inspected, and no credent
 ## Remaining verification
 
 Only the credential-gated real 50-minute mainland-network PoC remains. It is deliberately unchecked rather than simulated.
+
+## Fix round 1 (2026-08-28)
+
+RED/GREEN: added strict SDP MIME, streamed byte-budget, workspace-label, and upstream Answer validation cases; the route suite is 11/11 GREEN. Adapter contract remains GREEN (5/5) after gating the local track (`enabled=false` plus `replaceTrack(null)`) until inbound `txt` delivers `session.created`; it then configures with the dedicated WebRTC top-level PCM format fields and restores the track. The development spike now closes on unmount and exposes a disconnect control. No live call or credential access occurred.

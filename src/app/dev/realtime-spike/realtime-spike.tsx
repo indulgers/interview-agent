@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { createBrowserBailianRealtimeVoice } from '../../../modules/realtime-voice/bailian/adapter';
 import type { RealtimeConnection, VoiceEvent } from '../../../modules/realtime-voice/port';
@@ -15,6 +15,7 @@ export function RealtimeSpike() {
   const [bargeIn, setBargeIn] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const controlsEnabled = spikeControlsEnabled(isConnected);
+  useEffect(() => () => { void connection.current?.close(); }, []);
 
   const observe = async (event: VoiceEvent) => {
     const at = event.type === 'final_turn' ? event.endedAt : event.at;
@@ -44,6 +45,13 @@ export function RealtimeSpike() {
     }
   };
 
+  const disconnect = async () => {
+    await connection.current?.close();
+    connection.current = null;
+    setIsConnected(false);
+    setStatus('已断开');
+  };
+
   return (
     <main style={{ maxWidth: 720, margin: '48px auto', fontFamily: 'sans-serif' }}>
       <h1>百炼 WebRTC 开发验证</h1>
@@ -51,6 +59,7 @@ export function RealtimeSpike() {
       <button type="button" onClick={connect} disabled={controlsEnabled}>连接</button>{' '}
       <button type="button" onClick={() => connection.current?.signalEndOfAnswer()} disabled={!controlsEnabled}>结束回答（辅助静音）</button>{' '}
       <button type="button" onClick={() => connection.current?.cancelAssistantSpeech()} disabled={!controlsEnabled}>停止 AI</button>
+      {' '}<button type="button" onClick={disconnect} disabled={!controlsEnabled}>断开</button>
       <h2>候选人最终转写</h2><p>{candidate || '—'}</p>
       <h2>面试官最终转写</h2><p>{assistant || '—'}</p>
       <h2>最近事件</h2>
