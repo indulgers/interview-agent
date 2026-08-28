@@ -6,6 +6,7 @@ export type VoiceEvent =
   | { type: 'candidate_speech'; state: 'started' | 'stopped'; at: number }
   | { type: 'assistant_speech'; state: 'started' | 'stopped'; at: number }
   | { type: 'response'; state: 'started' | 'completed'; at: number }
+  | { type: 'transcript'; state: 'pending'; providerTurnId: string; speaker: TurnSpeaker; at: number }
   | { type: 'final_turn'; providerTurnId: string; speaker: TurnSpeaker; text: string; startedAt: number; endedAt: number; hasGap?: boolean }
   | { type: 'error'; category: 'ai_unavailable' | 'configuration' | 'unrecoverable'; message: string; at: number };
 

@@ -170,6 +170,16 @@ describe('InterviewSession', () => {
     expect(history.finishes[0]).toMatchObject({ result: 'completed', completeness: 'missing' });
   });
 
+  it('drains an explicitly pending transcript before manually finalizing', async () => {
+    const { history, voice, session } = await started();
+    await voice.emit({ type: 'transcript', state: 'pending', providerTurnId: 'tail-1', speaker: 'candidate', at: 0 });
+    await session.end();
+    expect(session.view().state).toBe('closing');
+    await voice.emit({ type: 'final_turn', providerTurnId: 'tail-1', speaker: 'candidate', text: '尾部回答', startedAt: 0, endedAt: 1 });
+    expect(session.view().result).toBe('completed');
+    expect(history.finishes[0]).toMatchObject({ completeness: 'complete' });
+  });
+
   it('compacts and injects progress every ten turns, at phase transition, and after reconnect', async () => {
     const { time, voice } = await started();
     for (let index = 1; index <= 10; index++) {
