@@ -50,6 +50,7 @@ function terminal(result: string): result is Exclude<SessionResult, 'in_progress
 }
 
 function speaker(value: TurnSpeaker): 'candidate' | 'ai' {
+  if (value !== 'candidate' && value !== 'ai') throw new Error('说话方必须是 candidate 或 ai');
   return value;
 }
 
@@ -139,6 +140,7 @@ export function createInterviewHistory(db: AppDatabase): InterviewHistory {
       const startedAt = validTimestamp(input.startedAt, '转写开始时间');
       const endedAt = validTimestamp(input.endedAt, '转写结束时间');
       if (endedAt < startedAt) throw new Error('转写结束时间不能早于开始时间');
+      speaker(input.speaker);
       return db.transaction((tx) => {
         const session = tx.select().from(interviewSessions).where(eq(interviewSessions.id, input.sessionId)).get();
         if (!session) throw new Error('面试会话不存在');
@@ -164,11 +166,12 @@ export function createInterviewHistory(db: AppDatabase): InterviewHistory {
           hasGap: input.hasGap ?? false,
         }).onConflictDoNothing({ target: [interviewTurns.sessionId, interviewTurns.providerTurnId] }).run();
         return inserted.changes === 0 ? 'duplicate' : 'inserted';
-      });
+      }, { behavior: 'immediate' });
     },
 
     async finish(id: SessionId, result: Exclude<SessionResult, 'in_progress'>, completeness: TranscriptCompleteness, actualDurationMs: number): Promise<void> {
       if (!terminal(result)) throw new Error('非法的会话结果');
+      if (completeness !== 'complete' && completeness !== 'missing') throw new Error('非法的转写完整性');
       if (!Number.isSafeInteger(actualDurationMs) || actualDurationMs < 0 || actualDurationMs > 7 * 24 * 60 * 60_000) throw new Error('实际面试时长必须为非负安全整数');
       db.transaction((tx) => {
         const session = tx.select().from(interviewSessions).where(eq(interviewSessions.id, id)).get();
@@ -200,6 +203,7 @@ export function createInterviewHistory(db: AppDatabase): InterviewHistory {
           .where(and(eq(interviewTurns.sessionId, id), eq(interviewTurns.speaker, 'candidate'))).limit(1).get();
         const eligible = session.result === 'completed' && Boolean(candidate);
         if (status !== 'not_applicable' && !eligible) throw new Error('当前会话不可生成反馈');
+        if (status === 'not_applicable' && eligible) throw new Error('已完成会话不能标记为不适用');
         const feedback = tx.select().from(interviewFeedback).where(eq(interviewFeedback.sessionId, id)).get();
         if (feedback && feedback.status !== status) {
           const allowed: Record<string, string[]> = { pending: ['generating', 'not_applicable'], generating: ['completed', 'failed'], failed: ['generating'], completed: [], not_applicable: [] };
@@ -259,6 +263,7 @@ export function createInterviewHistory(db: AppDatabase): InterviewHistory {
     },
 
     async delete(id: SessionId): Promise<void> {
+      nonempty(id, '会话 ID');
       db.transaction((tx) => {
         tx.delete(interviewSessions).where(eq(interviewSessions.id, id)).run();
       });

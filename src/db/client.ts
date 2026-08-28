@@ -26,6 +26,7 @@ export function createDatabase(databaseUrl = process.env.DATABASE_URL ?? 'file:.
   const filename = sqliteFilename(databaseUrl);
   if (filename !== ':memory:') fs.mkdirSync(path.dirname(path.resolve(filename)), { recursive: true });
   const sqlite = new BetterSqlite3(filename);
+  sqlite.pragma('busy_timeout = 5000');
   sqlite.pragma('foreign_keys = ON');
   return { sqlite, db: drizzle(sqlite, { schema }) };
 }

@@ -56,6 +56,9 @@ describe('InterviewHistory', () => {
     const id = await history.start({ snapshot, startedAt: 1, targetDurationMs: 2_700_000 });
     await expect(history.appendFinalTurn({ sessionId: id, providerTurnId: 'x', sequence: 1, speaker: 'candidate', text: 'x', startedAt: 3, endedAt: 2 })).rejects.toThrow();
     await expect(history.finish(id, 'completed', 'complete', -1)).rejects.toThrow();
+    await expect(history.finish(id, 'completed', 'bogus' as never, 1)).rejects.toThrow();
+    await expect(history.delete('   ')).rejects.toThrow();
+    await expect(history.appendFinalTurn({ sessionId: id, providerTurnId: 'bad-speaker', sequence: 1, speaker: 'other' as never, text: 'x', startedAt: 3, endedAt: 4 })).rejects.toThrow();
   });
 
   it('appends final turns in sequence order and deduplicates a provider turn id per session', async () => {
@@ -134,6 +137,7 @@ describe('InterviewHistory', () => {
     await history.setFeedback(id, { status: 'completed', generatedAt: new Date('2026-08-28T02:00:00Z'), result: { dimensions: [] } });
     expect((await history.detail(id))?.session.result).toBe('completed');
     expect((await history.detail(id))?.feedback?.status).toBe('completed');
+    await expect(history.setFeedback(id, { status: 'not_applicable' })).rejects.toThrow();
   });
 
   it('deletes a session and all dependent rows atomically', async () => {

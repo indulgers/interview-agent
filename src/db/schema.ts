@@ -11,6 +11,8 @@ export const interviewSessions = sqliteTable('interview_sessions', {
   transcriptCompleteness: text('transcript_completeness').notNull().default('complete'),
 }, (table) => ({
   validResult: check('interview_sessions_result_check', sql`${table.result} in ('in_progress','completed','interrupted','cancelled')`),
+  validCompleteness: check('interview_sessions_completeness_check', sql`${table.transcriptCompleteness} in ('complete','missing')`),
+  positiveTarget: check('interview_sessions_target_check', sql`${table.targetDurationMs} > 0`),
 }));
 
 export const contentSnapshots = sqliteTable('content_snapshots', {
@@ -44,6 +46,9 @@ export const interviewTurns = sqliteTable(
   (table) => ({
     sessionProviderTurn: uniqueIndex('interview_turns_session_provider_turn_idx').on(table.sessionId, table.providerTurnId),
     sessionSequence: uniqueIndex('interview_turns_session_sequence_idx').on(table.sessionId, table.sequence),
+    validSpeaker: check('interview_turns_speaker_check', sql`${table.speaker} in ('candidate','ai')`),
+    positiveSequence: check('interview_turns_sequence_check', sql`${table.sequence} > 0`),
+    orderedTimestamps: check('interview_turns_timestamp_check', sql`${table.endedAt} >= ${table.startedAt}`),
   }),
 );
 
@@ -54,6 +59,8 @@ export const interviewFeedback = sqliteTable('interview_feedback', {
   failureType: text('failure_type'),
   resultJson: text('result_json'),
   generatedAt: integer('generated_at', { mode: 'number' }),
-});
+}, (table) => ({
+  validStatus: check('interview_feedback_status_check', sql`${table.status} in ('pending','generating','completed','failed','not_applicable')`),
+}));
 
 export const schema = { interviewSessions, contentSnapshots, interviewTurns, interviewFeedback };

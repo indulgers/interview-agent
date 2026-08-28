@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "5a01d209-b7f3-471f-8b7a-c9bce36ad57e",
+  "id": "5552b732-a9b3-4ed2-aee1-717bfde65412",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "content_snapshots": {
@@ -178,7 +178,12 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "checkConstraints": {}
+      "checkConstraints": {
+        "interview_feedback_status_check": {
+          "name": "interview_feedback_status_check",
+          "value": "\"interview_feedback\".\"status\" in ('pending','generating','completed','failed','not_applicable')"
+        }
+      }
     },
     "interview_sessions": {
       "name": "interview_sessions",
@@ -242,6 +247,14 @@
         "interview_sessions_result_check": {
           "name": "interview_sessions_result_check",
           "value": "\"interview_sessions\".\"result\" in ('in_progress','completed','interrupted','cancelled')"
+        },
+        "interview_sessions_completeness_check": {
+          "name": "interview_sessions_completeness_check",
+          "value": "\"interview_sessions\".\"transcript_completeness\" in ('complete','missing')"
+        },
+        "interview_sessions_target_check": {
+          "name": "interview_sessions_target_check",
+          "value": "\"interview_sessions\".\"target_duration_ms\" > 0"
         }
       }
     },
@@ -348,7 +361,20 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "checkConstraints": {}
+      "checkConstraints": {
+        "interview_turns_speaker_check": {
+          "name": "interview_turns_speaker_check",
+          "value": "\"interview_turns\".\"speaker\" in ('candidate','ai')"
+        },
+        "interview_turns_sequence_check": {
+          "name": "interview_turns_sequence_check",
+          "value": "\"interview_turns\".\"sequence\" > 0"
+        },
+        "interview_turns_timestamp_check": {
+          "name": "interview_turns_timestamp_check",
+          "value": "\"interview_turns\".\"ended_at\" >= \"interview_turns\".\"started_at\""
+        }
+      }
     }
   },
   "views": {},
