@@ -1,0 +1,49 @@
+import { integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+
+export const interviewSessions = sqliteTable('interview_sessions', {
+  id: text('id').primaryKey(),
+  startedAt: integer('started_at', { mode: 'number' }).notNull(),
+  endedAt: integer('ended_at', { mode: 'number' }),
+  targetDurationMs: integer('target_duration_ms').notNull(),
+  actualDurationMs: integer('actual_duration_ms'),
+  result: text('result').notNull(),
+  transcriptCompleteness: text('transcript_completeness').notNull().default('complete'),
+});
+
+export const contentSnapshots = sqliteTable('content_snapshots', {
+  id: text('id').primaryKey(),
+  sessionId: text('session_id').notNull().references(() => interviewSessions.id, { onDelete: 'cascade' }),
+  version: text('version').notNull(),
+  hash: text('hash').notNull(),
+  candidateProfile: text('candidate_profile').notNull(),
+  interviewBrief: text('interview_brief').notNull(),
+});
+
+export const interviewTurns = sqliteTable(
+  'interview_turns',
+  {
+    id: text('id').primaryKey(),
+    sessionId: text('session_id').notNull().references(() => interviewSessions.id, { onDelete: 'cascade' }),
+    providerTurnId: text('provider_turn_id').notNull(),
+    sequence: integer('sequence').notNull(),
+    speaker: text('speaker').notNull(),
+    text: text('text').notNull(),
+    startedAt: integer('started_at', { mode: 'number' }),
+    endedAt: integer('ended_at', { mode: 'number' }),
+    hasGap: integer('has_gap', { mode: 'boolean' }).notNull().default(false),
+  },
+  (table) => ({
+    sessionProviderTurn: uniqueIndex('interview_turns_session_provider_turn_idx').on(table.sessionId, table.providerTurnId),
+  }),
+);
+
+export const interviewFeedback = sqliteTable('interview_feedback', {
+  id: text('id').primaryKey(),
+  sessionId: text('session_id').notNull().unique().references(() => interviewSessions.id, { onDelete: 'cascade' }),
+  status: text('status').notNull(),
+  failureType: text('failure_type'),
+  resultJson: text('result_json'),
+  generatedAt: integer('generated_at', { mode: 'number' }),
+});
+
+export const schema = { interviewSessions, contentSnapshots, interviewTurns, interviewFeedback };
