@@ -47,7 +47,7 @@ function summary(row: typeof interviewSessions.$inferSelect, feedbackStatus: str
     completeness,
     transcriptCompleteness: completeness,
     feedbackStatus: (feedbackStatus ?? 'pending') as SessionSummary['feedbackStatus'],
-    hasTranscriptGap,
+    hasTranscriptGap: hasTranscriptGap || completeness === 'missing',
   };
 }
 

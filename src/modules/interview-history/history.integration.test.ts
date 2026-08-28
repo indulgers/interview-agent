@@ -90,6 +90,15 @@ describe('InterviewHistory', () => {
     expect((await history.detail(id))?.session.result).toBe('completed');
   });
 
+  it('surfaces session-level transcript incompleteness in history summaries', async () => {
+    const history = newHistory();
+    const id = await history.start({ snapshot });
+    await history.finish(id, 'interrupted', 'missing');
+
+    expect((await history.list())[0]?.hasTranscriptGap).toBe(true);
+    expect((await history.detail(id))?.session.hasTranscriptGap).toBe(true);
+  });
+
   it('recovers only abandoned in-progress sessions as interrupted', async () => {
     const history = newHistory();
     const abandoned = await history.start({ snapshot });

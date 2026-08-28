@@ -10,6 +10,7 @@ Complete. SQLite persistence for immutable interview sessions, final transcript 
 - RED: after the initial minimal implementation, the integration tests reached the database boundary and failed with `Can't find meta/_journal.json file`, proving the tests require the real Drizzle migration rather than silently creating tables.
 - GREEN: after generating `drizzle/0000_solid_firestar.sql`, all six focused integration behaviors passed against separately created temporary SQLite files.
 - The tests cover session start and snapshot capture, ordered final-turn append, `(session_id, provider_turn_id)` idempotency, one-way terminal transition, abandoned-session recovery, independent feedback retry state, and cascade deletion.
+- RED/GREEN follow-up: a regression test first exposed that a session marked `missing` did not surface a list/detail transcript-gap flag when no individual turn carried a gap; summaries now combine session-level completeness with turn-level gap markers.
 
 ## Schema and invariants
 
@@ -23,8 +24,8 @@ Complete. SQLite persistence for immutable interview sessions, final transcript 
 
 ## Verification
 
-- `COREPACK_ENABLE_PROJECT_SPEC=0 pnpm test src/modules/interview-history`: 1 file, 6 tests passed.
-- `COREPACK_ENABLE_PROJECT_SPEC=0 pnpm test`: 5 files, 21 tests passed.
+- `COREPACK_ENABLE_PROJECT_SPEC=0 pnpm test src/modules/interview-history`: 1 file, 7 tests passed.
+- `COREPACK_ENABLE_PROJECT_SPEC=0 pnpm test`: 5 files, 22 tests passed.
 - Fresh migration verification: `DATABASE_URL=file:<unique-temp-dir>/fresh.sqlite COREPACK_ENABLE_PROJECT_SPEC=0 pnpm db:migrate` applied successfully; SQLite listed all four history tables and `__drizzle_migrations`.
 - `COREPACK_ENABLE_PROJECT_SPEC=0 pnpm typecheck`: passed; Next route types generated and `tsc --noEmit` exited 0.
 - `COREPACK_ENABLE_PROJECT_SPEC=0 pnpm lint`: passed with no diagnostics.
