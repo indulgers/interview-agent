@@ -87,4 +87,19 @@ describe('POST /api/realtime/session', () => {
     expect(config.status).toBe(500);
     expect(await config.text()).toBe('实时语音服务配置不可用。');
   });
+
+  it('aborts a stalled upstream request and returns a sanitized timeout response', async () => {
+    let signal: AbortSignal | undefined;
+    const response = await postSession(new Request('http://localhost/api/realtime/session', { method: 'POST', headers: { 'content-type': 'application/sdp' }, body: 'v=0\r\n' }), {
+      readEnv: () => env,
+      timeoutMs: 1,
+      fetch: async (_input, init) => {
+        signal = init.signal ?? undefined;
+        return new Promise(() => {});
+      },
+    });
+    expect(response.status).toBe(502);
+    expect(await response.text()).toBe('实时语音服务暂时不可用。');
+    expect(signal?.aborted).toBe(true);
+  });
 });

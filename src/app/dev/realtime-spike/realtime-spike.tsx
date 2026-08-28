@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { createBrowserBailianRealtimeVoice } from '../../../modules/realtime-voice/bailian/adapter';
 import type { RealtimeConnection, VoiceEvent } from '../../../modules/realtime-voice/port';
-import { spikeControlsEnabled } from './realtime-spike-state';
+import { closeSpikeConnection, spikeControlsEnabled } from './realtime-spike-state';
 
 export function RealtimeSpike() {
   const connection = useRef<RealtimeConnection | null>(null);
@@ -15,7 +15,7 @@ export function RealtimeSpike() {
   const [bargeIn, setBargeIn] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const controlsEnabled = spikeControlsEnabled(isConnected);
-  useEffect(() => () => { void connection.current?.close(); }, []);
+  useEffect(() => () => { void closeSpikeConnection(connection.current); }, []);
 
   const observe = async (event: VoiceEvent) => {
     const at = event.type === 'final_turn' ? event.endedAt : event.at;
@@ -46,7 +46,7 @@ export function RealtimeSpike() {
   };
 
   const disconnect = async () => {
-    await connection.current?.close();
+    await closeSpikeConnection(connection.current);
     connection.current = null;
     setIsConnected(false);
     setStatus('已断开');
