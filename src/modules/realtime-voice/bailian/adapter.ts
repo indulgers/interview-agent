@@ -155,6 +155,7 @@ class BailianRealtimeConnection implements RealtimeConnection {
       event_id: eventId(this.dependencies.now()), type: 'session.update', session: {
         model: MODEL, modalities: ['text', 'audio'], voice: this.voice,
         audio: { input: { format: { type: 'pcm', sample_rate: 16000 } }, output: { format: { type: 'pcm', sample_rate: 24000 } } },
+        input_audio_transcription: { model: 'qwen3-asr-flash-realtime' },
         instructions, turn_detection: { type: 'semantic_vad', threshold: 0.5, silence_duration_ms: 800 },
       },
     });

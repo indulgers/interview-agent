@@ -15,6 +15,7 @@ RED:
 - `node_modules/.bin/vitest run src/modules/realtime-voice/bailian/adapter.test.ts` initially failed because `./adapter` did not exist.
 - Added UTF-8-overlimit SDP test failed with `502` before byte-limit validation was implemented.
 - Temporarily removing inbound-channel validation made its focused test fail, then the validation was restored.
+- The session-update contract failed until `input_audio_transcription` was explicitly enabled for final candidate transcripts.
 
 GREEN:
 
