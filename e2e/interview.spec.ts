@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 type TestEvent = Record<string, unknown> & { type: string };
-type EndControl = { deferNextEnd(): void; failNextEnd(): void; finishNaturally(): Promise<void> };
+type EndControl = { deferNextEnd(): void; failNextEnd(): void; finishNaturally(): Promise<void>; endCallCount(): number };
 async function emit(page: Page, event: TestEvent) {
   await page.evaluate(async (value) => {
     const control = (window as unknown as { __interviewE2E?: { emit(event: TestEvent): Promise<void> } }).__interviewE2E;
@@ -50,8 +50,13 @@ test.describe.serial('interview MVP', () => {
     await page.getByRole('button', { name: '结束面试' }).click();
     await page.getByRole('button', { name: '确认结束并查看总结' }).dblclick();
     await expect(page.getByRole('button', { name: '正在保存…' })).toBeDisabled();
+    await expect(page.getByRole('status')).toBeFocused();
+    expect(await page.evaluate(() => (window as unknown as { __interviewE2E: EndControl }).__interviewE2E.endCallCount())).toBe(1);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page).toHaveURL(/\/interview$/);
     await page.evaluate(() => (window as unknown as { __interviewE2E: EndControl }).__interviewE2E.deferNextEnd());
+    expect(await page.evaluate(() => (window as unknown as { __interviewE2E: EndControl }).__interviewE2E.endCallCount())).toBe(1);
     await expect(page).toHaveURL(/\/history\/[\w-]+$/);
   });
 

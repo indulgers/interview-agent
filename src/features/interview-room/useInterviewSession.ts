@@ -18,6 +18,7 @@ const browserScheduler = {
 
 function createEndTestControl() {
   let failNext = false;
+  let endCalls = 0;
   let gate: { promise: Promise<void>; release(): void } | null = null;
   return {
     beforeFinish: async () => {
@@ -38,6 +39,8 @@ function createEndTestControl() {
       gate = { promise, release };
     },
     failNextEnd: () => { failNext = true; },
+    recordEndCall: () => { endCalls++; },
+    endCallCount: () => endCalls,
   };
 }
 
@@ -70,6 +73,7 @@ export function useInterviewSession(snapshot: ContentSnapshot, mediaStream: Medi
       ...previous,
       deferNextEnd: endTestControl.deferNextEnd,
       failNextEnd: endTestControl.failNextEnd,
+      endCallCount: endTestControl.endCallCount,
       finishNaturally: () => session.end(),
     };
     target.__interviewE2E = controls;
@@ -84,6 +88,7 @@ export function useInterviewSession(snapshot: ContentSnapshot, mediaStream: Medi
     retry: async () => { await session.retry(); refresh(); },
     endAnswer: async () => { await session.signalEndOfAnswer(); refresh(); },
     end: async () => {
+      endTestControl?.recordEndCall();
       if (!session.view().sessionId) throw new Error('面试会话尚未保存');
       const terminal = await session.end();
       refresh();

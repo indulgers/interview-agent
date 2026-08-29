@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useRef } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef } from 'react';
 
 export function EndInterviewDialog({ open, pending, error, restoreFocusTarget, onCancel, onConfirm }: {
   open: boolean;
@@ -19,7 +19,7 @@ export function EndInterviewDialog({ open, pending, error, restoreFocusTarget, o
   const titleId = useId();
   const descriptionId = useId();
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     latest.current = { onCancel, pending };
   }, [onCancel, pending]);
 
@@ -37,12 +37,10 @@ export function EndInterviewDialog({ open, pending, error, restoreFocusTarget, o
     };
   }, [open, restoreFocusTarget]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const pendingBegan = open && pending && !wasPending.current;
     wasPending.current = pending;
-    if (pendingBegan && (document.activeElement === continueButton.current || document.activeElement === confirmButton.current)) {
-      status.current?.focus();
-    }
+    if (pendingBegan) window.requestAnimationFrame(() => status.current?.focus());
   }, [open, pending]);
 
   useEffect(() => {
