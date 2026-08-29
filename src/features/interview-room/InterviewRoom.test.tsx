@@ -65,4 +65,15 @@ describe('interview room', () => {
     expect(renderToStaticMarkup(<Avatar speaking={false} />)).toContain('avatar-mouth-closed.svg');
     expect(renderToStaticMarkup(<Avatar speaking />)).toContain('avatar-mouth-open.svg');
   });
+
+  it('uses the compact navigation safe exit while an interview is in progress', () => {
+    const html = renderToStaticMarkup(<InterviewRoom
+      state="listening" elapsedMs={0} currentQuestion={null} error={null} candidateStream={null}
+      endDialogOpen={false} ending={false} endError={null}
+      onEndAnswer={vi.fn()} onRetry={vi.fn()} onRequestEnd={vi.fn()} onCancelEnd={vi.fn()} onEndInterview={vi.fn()}
+    />);
+
+    expect(html).toContain('结束并离开');
+    expect(html).not.toContain('href="/history"');
+  });
 });

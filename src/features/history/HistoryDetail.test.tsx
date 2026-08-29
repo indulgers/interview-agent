@@ -15,6 +15,7 @@ describe('HistoryDetail', () => {
     } satisfies SessionDetail;
     const html = renderToStaticMarkup(<HistoryDetail detail={detail} showDelete={false} />);
     expect(html.indexOf('第一个问题')).toBeLessThan(html.indexOf('第二句回答'));
-    expect(html).toContain('2026-08-27'); expect(html).toContain('重试生成反馈');
+    expect(html).toContain('2026-08-27'); expect(html).toContain('重新生成反馈');
+    expect(html).toContain('面试记录'); expect(html).toContain('aria-current="page"');
   });
 });

@@ -28,6 +28,16 @@ a {
   color: inherit;
 }
 
+.app-navigation { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 3.75rem; padding: .75rem 0; border-bottom: 1px solid var(--line); }
+.app-navigation-brand { color: var(--ink); font-size: .95rem; font-weight: 750; letter-spacing: .03em; }
+.app-navigation-links { display: flex; align-items: center; gap: .25rem; }
+.app-navigation-links a, .app-navigation-safe-exit { border-radius: .7rem; padding: .55rem .7rem; color: var(--muted); font-size: .9rem; font-weight: 650; text-decoration: none; }
+.app-navigation-links a[aria-current='page'] { background: #e7f0eb; color: var(--accent-dark); }
+.app-navigation-links a:hover, .app-navigation-safe-exit:hover { color: var(--accent-dark); background: #edf3ef; }
+.app-navigation-links a:focus-visible, .app-navigation-safe-exit:focus-visible, .summary-actions a:focus-visible, .summary-failed button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.app-navigation-compact { min-height: 0; flex: 1; padding: 0; border: 0; }
+.app-navigation-safe-exit { border: 1px solid var(--studio-line); background: transparent; color: var(--studio-text); cursor: pointer; }
+
 .home-shell {
   width: min(100% - 3rem, 72rem);
   margin: 0 auto;
@@ -234,6 +244,22 @@ h1 {
 .detail-title p:last-child { color: var(--muted); }
 .detail-section { padding: 3rem 0; border-bottom: 1px solid var(--line); }
 .detail-section h2 { margin-bottom: 2rem; font: 500 2rem 'Songti SC', Georgia, serif; }
+.interview-summary { padding: 2.25rem 0 3rem; border-bottom: 1px solid var(--line); }
+.summary-metadata { margin-bottom: 1rem; color: var(--muted); font-size: .84rem; }
+.summary-progress, .summary-failed, .summary-not-applicable { max-width: 42rem; padding: 1.5rem; border: 1px solid var(--line); border-radius: 1.125rem; background: #fff; }
+.summary-progress h2, .summary-failed h2, .summary-not-applicable h2 { margin-bottom: .65rem; font: 650 clamp(1.35rem, 3vw, 2rem)/1.25 Arial, 'PingFang SC', sans-serif; }
+.summary-progress p, .summary-failed p, .summary-not-applicable p { margin-bottom: 0; color: var(--muted); line-height: 1.65; }
+.summary-failed { border-color: #cba69b; }
+.summary-failed button { margin-top: 1rem; border: 1px solid var(--accent); border-radius: .75rem; padding: .7rem 1rem; background: var(--accent); color: white; font-weight: 700; cursor: pointer; }
+.summary-not-applicable { background: #faf8f4; }
+.summary-completed h2 { margin-bottom: 1.25rem; font: 500 2rem 'Songti SC', Georgia, serif; }
+.summary-completed h3 { margin: 2rem 0 1rem; font-size: 1rem; }
+.summary-priorities { display: grid; gap: .75rem; margin: 0; padding: 0; list-style: none; }
+.summary-priorities li { display: grid; gap: .2rem; padding: 1rem; border-radius: .875rem; background: #edf3ef; }
+.summary-priorities span { color: var(--muted); font-size: .9rem; }
+.summary-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1.5rem; }
+.summary-actions a { border: 1px solid var(--line); border-radius: .75rem; padding: .7rem 1rem; font-weight: 700; text-decoration: none; }
+.summary-actions .summary-retry-link { border-color: var(--accent); background: var(--accent); color: white; }
 .transcript-list { padding: 0; list-style: none; }
 .transcript-list li { display: grid; grid-template-columns: 9rem 1fr; gap: 1rem; padding: 1.25rem 0; border-top: 1px solid var(--line); }
 .transcript-list span, .transcript-list small { color: var(--muted); font-size: .75rem; }
@@ -258,4 +284,6 @@ h1 {
   .transcript-list li { grid-template-columns: 1fr; }
   .transcript-list small { grid-column: 1; }
   .dimension-grid { grid-template-columns: 1fr; }
+  .app-navigation { align-items: flex-start; }
+  .app-navigation-links { flex-wrap: wrap; justify-content: flex-end; }
 }

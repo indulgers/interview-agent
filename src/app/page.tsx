@@ -1,12 +1,10 @@
 import Link from 'next/link';
+import { AppNavigation } from '../features/navigation/AppNavigation';
 
 export default function HomePage() {
   return (
     <main className="home-shell">
-      <nav aria-label="主导航" className="home-nav">
-        <span className="brand">AI 模拟面试</span>
-        <Link href="/history">历史记录</Link>
-      </nav>
+      <AppNavigation active="home" />
 
       <section className="hero" aria-labelledby="home-title">
         <p className="eyebrow">NODE.JS 全栈 + AI AGENT</p>

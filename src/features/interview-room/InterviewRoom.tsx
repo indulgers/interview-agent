@@ -5,6 +5,7 @@ import type { SessionState } from '../../modules/interview-session/types';
 import { Avatar } from './Avatar';
 import { Controls } from './Controls';
 import { EndInterviewDialog } from './EndInterviewDialog';
+import { AppNavigation } from '../navigation/AppNavigation';
 
 const stateCopy: Record<SessionState, string> = {
   ready: '准备中', connecting: '正在连接面试官', listening: '请开始回答',
@@ -41,7 +42,7 @@ export function InterviewRoom({ state, elapsedMs, currentQuestion, error, candid
     candidateStream?.getTracks().filter((track) => track.kind === kind).forEach((track) => { track.enabled = !active; });
   };
   return <main className="interview-shell">
-    <header className="room-header"><span className="room-brand">INTERVIEW / 01</span><time>{formatTime(elapsedMs)} <small>/ 45:00</small></time><span className="recording-dot">LIVE</span></header>
+    <header className="room-header"><AppNavigation active="interview" compact onAttemptLeave={onRequestEnd} /><time>{formatTime(elapsedMs)} <small>/ 45:00</small></time><span className="recording-dot">LIVE</span></header>
     <section className="interviewer-frame">
       <Avatar speaking={state === 'speaking'} />
       <div className="state-overlay"><span>{stateCopy[state]}</span>{currentQuestion && <q>{currentQuestion}</q>}{state === 'listening' && <small>结束时可点击“我回答完了”</small>}</div>
