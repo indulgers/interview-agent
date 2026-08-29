@@ -133,6 +133,7 @@ describe('InterviewSession', () => {
     voice.emit({ type: 'assistant_speech', state: 'started', at: 1 }); await flush();
     voice.emit({ type: 'candidate_speech', state: 'started', at: 2 }); await flush();
     expect(session.view().state).toBe('listening');
+    expect(session.view().answerSubmission).toBe('idle');
     expect(voice.connections[0]?.cancelAssistantSpeechCount).toBe(1);
   });
 
@@ -143,45 +144,61 @@ describe('InterviewSession', () => {
     expect(session.view().state).toBe('listening');
   });
 
-  it('shows a response hint at eight seconds and pauses for one automatic retry at fifteen', async () => {
-    const { time, voice, session } = await started();
-    voice.emit({ type: 'candidate_speech', state: 'stopped', at: 0 }); await flush();
-    time.advance(8_000); await flush();
-    expect(session.view().responseHint).toBe(true);
-    time.advance(7_000); await flush();
+  it('exposes the session id and submits an answer only after the candidate explicitly signals completion', async () => {
+    const time = new FakeTime(); const history = new MemoryHistory(); const voice = new MemoryRealtimeVoice();
+    const session = createInterviewSession({ clock: time, scheduler: time, history, voice, snapshot: createContentSnapshot() });
+    expect(session.view()).toMatchObject({ sessionId: null, answerSubmission: 'idle' });
+    await session.start({ microphone: true, camera: true });
+    expect(session.view().sessionId).toBe('session-1');
+
+    await voice.emit({ type: 'candidate_speech', state: 'stopped', at: time.now() });
+    expect(voice.connections[0]?.submitAnswerCount).toBe(0);
     expect(session.view().state).toBe('listening');
-    expect(session.view().activeDurationMs).toBe(15_000);
-    expect(voice.connections).toHaveLength(2);
+
+    const submission = session.signalEndOfAnswer();
+    expect(session.view().answerSubmission).toBe('submitting');
+    await submission;
+    expect(voice.connections[0]?.submitAnswerCount).toBe(1);
+    expect(session.view()).toMatchObject({ state: 'thinking', answerSubmission: 'idle' });
   });
 
-  it('leaves a second unanswered response paused for a user retry and keeps end-of-answer as VAD assistance', async () => {
-    const { time, voice, session } = await started();
+  it('marks a rejected answer submission as failed and permits an explicit retry', async () => {
+    const { voice, session } = await started();
+    voice.connections[0]?.rejectSubmit(new Error('provider rejected submission'));
+
+    await expect(session.signalEndOfAnswer()).rejects.toThrow('provider rejected submission');
+    expect(session.view()).toMatchObject({ state: 'listening', answerSubmission: 'failed' });
+
     await session.signalEndOfAnswer();
-    expect(voice.connections[0]?.signalEndOfAnswerCount).toBe(1);
-    voice.emit({ type: 'candidate_speech', state: 'stopped', at: 0 }); await flush();
-    time.advance(15_000); await flush();
-    voice.emit({ type: 'candidate_speech', state: 'stopped', at: 15_000 }); await flush();
-    time.advance(15_000); await flush();
-    expect(session.view().state).toBe('paused');
-    await session.retry();
-    expect(session.view().state).toBe('listening');
+    expect(voice.connections[0]?.submitAnswerCount).toBe(2);
+    expect(session.view()).toMatchObject({ state: 'thinking', answerSubmission: 'idle' });
   });
 
-  it('allows one automatic retry in each independent candidate-response timeout cycle', async () => {
-    const { time, voice, session } = await started();
-    await voice.emit({ type: 'candidate_speech', state: 'stopped', at: 0 });
-    time.advance(15_000); await flush();
-    expect(session.view().state).toBe('listening');
-    await voice.emit({ type: 'candidate_speech', state: 'started', at: 15_000 });
-    await voice.emit({ type: 'candidate_speech', state: 'stopped', at: 15_001 });
-    time.advance(15_000); await flush();
-    expect(session.view().state).toBe('listening');
-    await voice.emit({ type: 'candidate_speech', state: 'started', at: 30_001 });
-    await voice.emit({ type: 'candidate_speech', state: 'stopped', at: 30_002 });
-    time.advance(15_000); await flush();
+  it('shares one answer submission across a double click', async () => {
+    const { voice, session } = await started();
+    let release!: () => void;
+    voice.connections[0]?.deferSubmit(new Promise<void>((resolve) => { release = resolve; }));
 
-    expect(session.view().state).toBe('listening');
-    expect(voice.connections).toHaveLength(4);
+    const first = session.signalEndOfAnswer();
+    const second = session.signalEndOfAnswer();
+    expect(second).toBe(first);
+    expect(voice.connections[0]?.submitAnswerCount).toBe(1);
+    expect(session.view().answerSubmission).toBe('submitting');
+
+    release();
+    await first;
+    expect(session.view()).toMatchObject({ state: 'thinking', answerSubmission: 'idle' });
+  });
+
+  it('rejects answer submission while reconnecting without using the stale connection', async () => {
+    const { voice, session } = await started();
+    voice.deferNextConnect();
+    await voice.emit({ type: 'connection', state: 'disconnected', at: 0 });
+    expect(session.view().state).toBe('reconnecting');
+
+    await expect(session.signalEndOfAnswer()).rejects.toThrow('语音连接尚未就绪。');
+    expect(voice.connections[0]?.submitAnswerCount).toBe(0);
+    expect(session.view().answerSubmission).toBe('failed');
   });
 
   it('pauses immediately on disconnect, reconnects within 20 seconds, and does not count the pause', async () => {

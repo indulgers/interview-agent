@@ -62,7 +62,7 @@ export function RealtimeSpike() {
   };
 
   const endAnswer = () => {
-    void runSpikeAction(async () => { await connection.current?.signalEndOfAnswer(); }, () => setStatus('当前连接不可用。'));
+    void runSpikeAction(async () => { await connection.current?.submitAnswer(); }, () => setStatus('当前连接不可用。'));
   };
 
   const cancelAssistant = () => {

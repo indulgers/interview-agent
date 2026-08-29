@@ -7,8 +7,10 @@ export interface Scheduler { schedule(callback: () => void, delayMs: number): ()
 export type SessionState = 'ready' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'paused' | 'reconnecting' | 'closing' | 'finished';
 export interface DeviceReadiness { microphone: boolean; camera: boolean; }
 export interface InterviewSessionView {
+  sessionId: string | null;
   state: SessionState;
   result: Exclude<SessionResult, 'in_progress'> | null;
+  answerSubmission: 'idle' | 'submitting' | 'failed';
   activeDurationMs: number;
   allowNewTopics: boolean;
   responseHint: boolean;

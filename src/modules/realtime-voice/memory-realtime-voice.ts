@@ -9,14 +9,16 @@ import type {
 export class MemoryRealtimeConnection implements RealtimeConnection {
   readonly injectedProgress: InterviewProgress[] = [];
   cancelAssistantSpeechCount = 0;
-  signalEndOfAnswerCount = 0;
+  submitAnswerCount = 0;
   closed = false;
 
   private listeners = new Set<(event: VoiceEvent) => void | Promise<void>>();
   private closeFailure: Error | null = null;
   private cancelFailure: Error | null = null;
+  private submitFailure: Error | null = null;
   private injectFailure: Error | null = null;
   private cancelGate: Promise<void> | null = null;
+  private submitGate: Promise<void> | null = null;
 
   subscribe(listener: (event: VoiceEvent) => void | Promise<void>) {
     this.listeners.add(listener);
@@ -39,8 +41,23 @@ export class MemoryRealtimeConnection implements RealtimeConnection {
     this.cancelGate = gate;
   }
 
-  async signalEndOfAnswer() {
-    this.signalEndOfAnswerCount++;
+  rejectSubmit(error: Error) {
+    this.submitFailure = error;
+  }
+
+  deferSubmit(gate: Promise<void>) {
+    this.submitGate = gate;
+  }
+
+  submitAnswer() {
+    this.submitAnswerCount++;
+    if (this.closed) return Promise.reject(new Error('实时语音连接已断开。'));
+    const failure = this.submitFailure;
+    this.submitFailure = null;
+    if (failure) return Promise.reject(failure);
+    const gate = this.submitGate ?? Promise.resolve();
+    this.submitGate = null;
+    return gate;
   }
 
   async cancelAssistantSpeech() {

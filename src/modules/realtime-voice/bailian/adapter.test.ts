@@ -85,7 +85,7 @@ async function readyForPeer(peer: FakePeer) {
 }
 
 describe('BailianRealtimeVoice', () => {
-  it('negotiates injected WebRTC/media boundaries and sends the documented semantic-VAD session update', async () => {
+  it('negotiates injected WebRTC/media boundaries and configures manual answer submission', async () => {
     const { peer, track, audio, waits, voice } = setup();
     const connected = voice.connect({ instructions: '只问一个技术问题。', resumeFromSequence: 3 });
     await readyForPeer(peer);
@@ -104,7 +104,7 @@ describe('BailianRealtimeVoice', () => {
         model: 'qwen3.5-omni-flash-realtime', modalities: ['text', 'audio'], voice: 'Tina', instructions: '只问一个技术问题。',
         input_audio_format: 'pcm', output_audio_format: 'pcm',
         input_audio_transcription: { model: 'qwen3-asr-flash-realtime' },
-        turn_detection: { type: 'semantic_vad', threshold: 0.5, silence_duration_ms: 800 },
+        turn_detection: null,
       },
     });
     await connection.close();
@@ -140,17 +140,21 @@ describe('BailianRealtimeVoice', () => {
     await connection.close();
   });
 
-  it('temporarily mutes the local track until VAD reports stopped and clears playback when cancelling', async () => {
-    const { peer, track, audio, waits, voice } = setup();
+  it('submits an answer with ordered provider commands and keeps the local track muted until response completion', async () => {
+    const { peer, track, audio, voice } = setup();
     const connectionPromise = voice.connect({ instructions: 'instructions', resumeFromSequence: 0 }); await readyForPeer(peer); peer.deliverInbound(); peer.deliverRemoteAudio('remote');
     const connection = await connectionPromise;
-    const ending = connection.signalEndOfAnswer();
+    const submission = connection.submitAnswer();
     await Promise.resolve();
     expect(track.enabled).toBe(false);
-    peer.inbound.emit(JSON.stringify({ type: 'input_audio_buffer.speech_stopped', item_id: 'user-1', audio_end_ms: 100 }));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(peer.outbound.sent.slice(-2).map((value) => JSON.parse(value).type)).toEqual([
+      'input_audio_buffer.commit',
+      'response.create',
+    ]);
+    await submission;
     expect(track.enabled).toBe(false);
-    waits.splice(0).forEach((resolve) => resolve()); await ending;
+    peer.inbound.emit(JSON.stringify({ type: 'response.done', response: { id: 'response-1', status: 'completed' } }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(track.enabled).toBe(true);
     await connection.cancelAssistantSpeech();
     expect(JSON.parse(peer.outbound.sent.at(-1)!)).toMatchObject({ type: 'response.cancel' });
@@ -158,53 +162,66 @@ describe('BailianRealtimeVoice', () => {
     expect(audio.srcObject).toBeNull();
   });
 
-  it('uses a fresh VAD stop waiter for each answer and shares concurrent calls', async () => {
-    const { peer, track, waits, voice } = setup();
-    const connectionPromise = voice.connect({ instructions: 'instructions', resumeFromSequence: 0 }); await readyForPeer(peer); peer.deliverInbound();
-    const connection = await connectionPromise;
-    const first = connection.signalEndOfAnswer();
-    await Promise.resolve();
-    expect(track.enabled).toBe(false);
-    peer.inbound.emit(JSON.stringify({ type: 'input_audio_buffer.speech_stopped', item_id: 'first', audio_end_ms: 100 }));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    waits.splice(0).forEach((resolve) => resolve()); await first;
-    expect(track.enabled).toBe(true);
-
-    peer.inbound.emit(JSON.stringify({ type: 'input_audio_buffer.speech_stopped', item_id: 'stale', audio_end_ms: 200 }));
-    const second = connection.signalEndOfAnswer();
-    const concurrent = connection.signalEndOfAnswer();
-    expect(concurrent).toBe(second);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(track.enabled).toBe(false);
-    let settled = false; void second.then(() => { settled = true; });
-    await Promise.resolve();
-    expect(settled).toBe(false);
-    peer.inbound.emit(JSON.stringify({ type: 'input_audio_buffer.speech_stopped', item_id: 'second', audio_end_ms: 300 }));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    waits.splice(0).forEach((resolve) => resolve()); await second;
-    expect(track.enabled).toBe(true);
-    await connection.close();
-  });
-
-  it('restores a muted track when the connection closes before VAD stops', async () => {
+  it('shares concurrent answer submissions and sends one provider command pair', async () => {
     const { peer, track, voice } = setup();
     const connectionPromise = voice.connect({ instructions: 'instructions', resumeFromSequence: 0 }); await readyForPeer(peer); peer.deliverInbound();
     const connection = await connectionPromise;
-    void connection.signalEndOfAnswer(); await Promise.resolve();
+    const first = connection.submitAnswer();
+    const concurrent = connection.submitAnswer();
+    expect(concurrent).toBe(first);
+    await Promise.resolve();
+    expect(track.enabled).toBe(false);
+    expect(peer.outbound.sent.slice(-2).map((value) => JSON.parse(value).type)).toEqual([
+      'input_audio_buffer.commit',
+      'response.create',
+    ]);
+    let settled = false;
+    void first.then(() => { settled = true; });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(true);
+    expect(track.enabled).toBe(false);
+    peer.inbound.emit(JSON.stringify({ type: 'response.done', response: { id: 'response-1', status: 'completed' } }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(track.enabled).toBe(true);
+    await connection.close();
+  });
+
+  it('restores a muted track when the connection closes before a submitted response completes', async () => {
+    const { peer, track, voice } = setup();
+    const connectionPromise = voice.connect({ instructions: 'instructions', resumeFromSequence: 0 }); await readyForPeer(peer); peer.deliverInbound();
+    const connection = await connectionPromise;
+    await connection.submitAnswer();
     expect(track.enabled).toBe(false);
     await connection.close();
     expect(track.enabled).toBe(true);
   });
 
-  it('restores a muted track when the fresh VAD waiter times out', async () => {
-    const { peer, track, waits, voice } = setup();
+  it('restores a muted track when a submitted response fails', async () => {
+    const { peer, track, voice } = setup();
     const connectionPromise = voice.connect({ instructions: 'instructions', resumeFromSequence: 0 }); await readyForPeer(peer); peer.deliverInbound();
     const connection = await connectionPromise;
-    const ending = connection.signalEndOfAnswer(); await Promise.resolve();
+    await connection.submitAnswer();
     expect(track.enabled).toBe(false);
-    waits.splice(0).forEach((resolve) => resolve());
-    await ending;
+
+    peer.inbound.emit(JSON.stringify({ type: 'error', error: { type: 'server_error', code: 'response_failed', message: 'provider detail' } }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     expect(track.enabled).toBe(true);
+    await connection.close();
+  });
+
+  it('keeps candidate VAD events observable without automatically requesting a response', async () => {
+    const { peer, voice } = setup();
+    const connectionPromise = voice.connect({ instructions: 'instructions', resumeFromSequence: 0 }); await readyForPeer(peer); peer.deliverInbound();
+    const connection = await connectionPromise;
+    const seen: string[] = [];
+    connection.subscribe((event) => { seen.push(event.type === 'candidate_speech' ? `${event.type}:${event.state}` : event.type); });
+    peer.inbound.emit(JSON.stringify({ type: 'input_audio_buffer.speech_started', item_id: 'user-1', audio_start_ms: 10 }));
+    peer.inbound.emit(JSON.stringify({ type: 'input_audio_buffer.speech_stopped', item_id: 'user-1', audio_end_ms: 100 }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(seen).toEqual(['candidate_speech:started', 'transcript', 'candidate_speech:stopped']);
+    expect(peer.outbound.sent.map((value) => JSON.parse(value).type)).not.toContain('response.create');
     await connection.close();
   });
 
@@ -328,7 +345,7 @@ describe('BailianRealtimeVoice', () => {
     expect(peer.closed).toBe(true);
     expect(audio.paused).toBe(true);
     await expect(connection.cancelAssistantSpeech()).rejects.toThrow('实时语音连接已断开。');
-    await expect(connection.signalEndOfAnswer()).rejects.toThrow('实时语音连接已断开。');
+    await expect(connection.submitAnswer()).rejects.toThrow('实时语音连接已断开。');
     await expect(connection.injectProgress({ phase: 'fullstack', coveredTopics: [], evidence: [], pendingFollowUps: [], updatedThroughSequence: 0 })).rejects.toThrow('实时语音连接已断开。');
     expect(peer.outbound.sent).toHaveLength(sentBeforeDisconnect);
     await connection.close();

@@ -4,7 +4,6 @@ import { createBailianTiming, parseBailianEvent } from './events';
 
 const MODEL = 'qwen3.5-omni-flash-realtime';
 const ICE_TIMEOUT_MS = 10_000;
-const SILENCE_INTERVAL_MS = 800;
 
 export interface BailianDataChannel {
   label: string;
@@ -134,13 +133,11 @@ class BailianRealtimeConnection implements RealtimeConnection {
   private inbound: BailianDataChannel | undefined;
   private unavailable = false;
   private resourcesReleased = false;
-  private answerEnding = false;
-  private answerEndingPromise: Promise<void> | undefined;
-  private speechStopGeneration = 0;
+  private answerSubmissionPromise: Promise<void> | undefined;
+  private awaitingResponse = false;
   private readyResolve!: () => void;
   private readonly configured = new Promise<void>((resolve) => { this.readyResolve = resolve; });
   private sessionCreated = false;
-  private answerEnd: { generation: number; resolveStopped: () => void; resolveClosed: () => void } | undefined;
   private readonly eventTiming = createBailianTiming();
 
   constructor(
@@ -180,7 +177,6 @@ class BailianRealtimeConnection implements RealtimeConnection {
   onConnectionStateChange() {
     if (!['disconnected', 'failed', 'closed'].includes(this.peer.connectionState) || this.unavailable) return;
     this.unavailable = true;
-    this.answerEnd?.resolveClosed();
     this.eventTail = this.eventTail.then(() => this.emitSafely({ type: 'connection', state: 'disconnected', at: this.dependencies.now() })).catch(() => { this.diagnostic('provider-event-handler-failed'); });
     this.releaseResources();
   }
@@ -191,42 +187,34 @@ class BailianRealtimeConnection implements RealtimeConnection {
         model: MODEL, modalities: ['text', 'audio'], voice: this.voice,
         input_audio_format: 'pcm', output_audio_format: 'pcm',
         input_audio_transcription: { model: 'qwen3-asr-flash-realtime' },
-        instructions, turn_detection: { type: 'semantic_vad', threshold: 0.5, silence_duration_ms: 800 },
+        instructions, turn_detection: null,
       },
     });
   }
 
-  signalEndOfAnswer() {
+  submitAnswer() {
     if (this.unavailable) return Promise.reject(connectionUnavailable());
-    if (!this.localTrack.enabled) return Promise.resolve();
-    if (this.answerEndingPromise) return this.answerEndingPromise;
-    const ending = this.endAnswer();
-    this.answerEndingPromise = ending;
-    void ending.finally(() => { if (this.answerEndingPromise === ending) this.answerEndingPromise = undefined; });
-    return ending;
+    if (this.answerSubmissionPromise) return this.answerSubmissionPromise;
+    const submission = this.submitCurrentAnswer();
+    this.answerSubmissionPromise = submission;
+    void submission.then(
+      () => { if (this.answerSubmissionPromise === submission) this.answerSubmissionPromise = undefined; },
+      () => { if (this.answerSubmissionPromise === submission) this.answerSubmissionPromise = undefined; },
+    );
+    return submission;
   }
 
-  private async endAnswer() {
+  private async submitCurrentAnswer() {
     await this.eventTail;
     if (this.unavailable) throw connectionUnavailable();
-    if (!this.localTrack.enabled) return;
-    this.answerEnding = true;
     this.localTrack.enabled = false;
-    const generation = this.speechStopGeneration;
-    let resolveStopped!: () => void;
-    let resolveClosed!: () => void;
-    const stopped = new Promise<void>((resolve) => { resolveStopped = resolve; });
-    const closed = new Promise<void>((resolve) => { resolveClosed = resolve; });
-    this.answerEnd = { generation, resolveStopped, resolveClosed };
     try {
-      await Promise.all([
-        Promise.race([stopped, closed, this.dependencies.sleep(2_000)]),
-        Promise.race([closed, this.dependencies.sleep(SILENCE_INTERVAL_MS)]),
-      ]);
-    } finally {
-      if (this.answerEnd?.generation === generation) this.answerEnd = undefined;
+      this.send({ event_id: eventId(this.dependencies.now()), type: 'input_audio_buffer.commit' });
+      this.send({ event_id: eventId(this.dependencies.now()), type: 'response.create' });
+      this.awaitingResponse = true;
+    } catch (cause) {
       this.localTrack.enabled = true;
-      this.answerEnding = false;
+      throw cause;
     }
   }
 
@@ -245,7 +233,6 @@ class BailianRealtimeConnection implements RealtimeConnection {
   async close() {
     if (this.resourcesReleased) { await this.eventTail; return; }
     this.unavailable = true;
-    this.answerEnd?.resolveClosed();
     this.releaseResources();
     await this.eventTail;
   }
@@ -265,13 +252,13 @@ class BailianRealtimeConnection implements RealtimeConnection {
     let payload: unknown;
     try { payload = JSON.parse(text); } catch { this.diagnostic('malformed-txt-event'); return; }
     if (isObject(payload) && payload.type === 'session.created') { this.sessionCreated = true; if (this.inbound) this.readyResolve(); }
-    if (isObject(payload) && payload.type === 'input_audio_buffer.speech_stopped') {
-      this.speechStopGeneration++;
-      if (this.answerEnd && this.speechStopGeneration > this.answerEnd.generation) this.answerEnd.resolveStopped();
-    }
     const events = parseBailianEvent(payload, this.dependencies.now(), this.eventTiming);
     if (events.length === 0) this.diagnostic(isObject(payload) && typeof payload.type === 'string' ? `unknown-event:${payload.type}` : 'malformed-provider-event');
     for (const event of events) await this.emitSafely(event);
+    if (isObject(payload) && (payload.type === 'response.done' || payload.type === 'error') && this.awaitingResponse) {
+      this.awaitingResponse = false;
+      this.localTrack.enabled = true;
+    }
   }
 
   private async emitSafely(event: VoiceEvent) {

@@ -13,7 +13,7 @@ export type VoiceEvent =
 export interface RealtimeConnectInput { instructions: string; resumeFromSequence: number; }
 export interface RealtimeConnection {
   subscribe(listener: (event: VoiceEvent) => void | Promise<void>): () => void;
-  signalEndOfAnswer(): Promise<void>;
+  submitAnswer(): Promise<void>;
   cancelAssistantSpeech(): Promise<void>;
   injectProgress(progress: InterviewProgress): Promise<void>;
   close(): Promise<void>;

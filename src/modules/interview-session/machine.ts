@@ -9,8 +9,6 @@ import type {
   SessionState,
 } from './types';
 
-const HINT = 8_000;
-const RESPONSE = 15_000;
 const RECONNECT = 20_000;
 const CADENCE = 2_000;
 const DRAIN = 5_000;
@@ -66,8 +64,9 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
   let finalizing = false;
   let progress = createInitialProgress();
   let responseHint = false;
+  let answerSubmission: InterviewSessionView['answerSubmission'] = 'idle';
+  let answerSubmissionPromise: Promise<void> | null = null;
   let currentQuestion: string | null = null;
-  let retried = false;
   let allowNewTopics = true;
   let epoch = 0;
   let connectAttempt = 0;
@@ -76,8 +75,6 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
   const recent: Recent[] = [];
   const closed = new WeakSet<RealtimeConnection>();
 
-  let hintCancellation: (() => void) | null = null;
-  let responseCancellation: (() => void) | null = null;
   let reconnectCancellation: (() => void) | null = null;
   let cadenceCancellation: (() => void) | null = null;
   let budgetCancellation: (() => void) | null = null;
@@ -116,16 +113,14 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
   };
 
   const clearResponse = () => {
-    clear(hintCancellation);
-    clear(responseCancellation);
-    hintCancellation = null;
-    responseCancellation = null;
     responseHint = false;
   };
 
   const view = (): InterviewSessionView => ({
+    sessionId: id,
     state,
     result,
+    answerSubmission,
     activeDurationMs: elapsed(),
     allowNewTopics,
     responseHint,
@@ -285,23 +280,6 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
     return attempt(token);
   }
 
-  function timeout() {
-    clearResponse();
-    hintCancellation = deps.scheduler.schedule(() => {
-      responseHint = true;
-    }, HINT);
-    responseCancellation = deps.scheduler.schedule(() => {
-      if (retried) {
-        clearResponse();
-        state = 'paused';
-        pause();
-      } else {
-        retried = true;
-        void reconnect();
-      }
-    }, RESPONSE);
-  }
-
   async function onEvent(event: VoiceEvent) {
     if (result || finalizing) return;
 
@@ -314,7 +292,6 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
         break;
       case 'candidate_speech':
         if (event.state === 'started') {
-          retried = false;
           clearResponse();
           if (state === 'speaking') {
             try {
@@ -329,13 +306,10 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
           } else {
             state = 'listening';
           }
-        } else {
-          timeout();
         }
         break;
       case 'assistant_speech':
         clearResponse();
-        retried = false;
         state = event.state === 'started' ? 'speaking' : 'listening';
         break;
       case 'response':
@@ -343,7 +317,6 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
           clearResponse();
           state = 'thinking';
         } else if (state === 'thinking') {
-          retried = false;
           state = 'listening';
         }
         break;
@@ -436,18 +409,38 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
     async retry() {
       await enqueue(async () => {
         if (state !== 'paused') return;
-        retried = false;
         clearResponse();
         state = 'ready';
         await reconnect();
       });
     },
-    async signalEndOfAnswer() {
-      try {
-        await connection?.signalEndOfAnswer();
-      } catch {
-        error = '结束回答辅助失败';
+    signalEndOfAnswer() {
+      if (answerSubmissionPromise) return answerSubmissionPromise;
+      if (!connection || state !== 'listening') {
+        answerSubmission = 'failed';
+        return Promise.reject(new Error('语音连接尚未就绪。'));
       }
+
+      answerSubmission = 'submitting';
+      const target = connection;
+      const token = epoch;
+      let submission!: Promise<void>;
+      submission = (async () => {
+        try {
+          await target.submitAnswer();
+          if (token === epoch && connection === target && !result && !finalizing) {
+            answerSubmission = 'idle';
+            if (state === 'listening') state = 'thinking';
+          }
+        } catch (cause) {
+          if (!result && !finalizing) answerSubmission = 'failed';
+          throw cause;
+        } finally {
+          if (answerSubmissionPromise === submission) answerSubmissionPromise = null;
+        }
+      })();
+      answerSubmissionPromise = submission;
+      return submission;
     },
     end,
   };
