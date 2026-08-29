@@ -97,7 +97,7 @@ async function readyForPeer(peer: FakePeer) {
 }
 
 describe('BailianRealtimeVoice', () => {
-  it('detects sustained local speech energy and closes the Web Audio observer cleanly', () => {
+  it('detects sustained local speech energy and closes the Web Audio observer cleanly', async () => {
     class FakeAnalyser {
       fftSize = 0;
       smoothingTimeConstant = 0;
@@ -125,6 +125,7 @@ describe('BailianRealtimeVoice', () => {
       const speechStarts: number[] = [];
       const observer = createWebAudioSpeechActivityObserver({} as never, () => speechStarts.push(1));
       expect(createdContext).not.toBeNull();
+      await Promise.resolve();
       expect(frame).not.toBeNull();
       createdContext!.analyser.level = 160;
       (frame as unknown as FrameRequestCallback)(0);
@@ -136,6 +137,84 @@ describe('BailianRealtimeVoice', () => {
       Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: previousAudioContext });
       Object.defineProperty(globalThis, 'requestAnimationFrame', { configurable: true, value: previousRequestAnimationFrame });
       Object.defineProperty(globalThis, 'cancelAnimationFrame', { configurable: true, value: previousCancelAnimationFrame });
+    }
+  });
+
+  it('waits for a suspended AudioContext to resume before sampling speech', async () => {
+    class FakeAnalyser {
+      fftSize = 512;
+      smoothingTimeConstant = 0;
+      level = 160;
+      getByteTimeDomainData(data: Uint8Array) { data.fill(this.level); }
+      disconnect() {}
+    }
+    let resume!: () => void;
+    let createdContext!: { state: string; analyser: FakeAnalyser; closed: boolean; close: () => Promise<void>; resume: () => Promise<void> };
+    class FakeAudioContext {
+      state = 'suspended';
+      analyser = new FakeAnalyser();
+      closed = false;
+      constructor() { createdContext = this; }
+      createAnalyser() { return this.analyser; }
+      createMediaStreamSource(_stream: unknown) { return { connect: (_analyser: unknown) => undefined, disconnect: () => undefined }; }
+      resume() { return new Promise<void>((resolve) => { resume = () => { this.state = 'running'; resolve(); }; }); }
+      close() { this.closed = true; return Promise.resolve(); }
+    }
+    const previousAudioContext = globalThis.AudioContext;
+    const previousRequestAnimationFrame = globalThis.requestAnimationFrame;
+    const previousCancelAnimationFrame = globalThis.cancelAnimationFrame;
+    let frame: FrameRequestCallback | null = null;
+    Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: FakeAudioContext });
+    Object.defineProperty(globalThis, 'requestAnimationFrame', { configurable: true, value: (callback: FrameRequestCallback) => { frame = callback; return 1; } });
+    Object.defineProperty(globalThis, 'cancelAnimationFrame', { configurable: true, value: () => { frame = null; } });
+    try {
+      const speechStarts: number[] = [];
+      const observer = createWebAudioSpeechActivityObserver({} as never, () => speechStarts.push(1));
+      expect(frame).toBeNull();
+      resume();
+      await Promise.resolve();
+      expect(frame).not.toBeNull();
+      (frame as unknown as FrameRequestCallback)(0);
+      (frame as unknown as FrameRequestCallback)(16);
+      expect(speechStarts).toHaveLength(1);
+      observer.close();
+      expect(createdContext.closed).toBe(true);
+    } finally {
+      Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: previousAudioContext });
+      Object.defineProperty(globalThis, 'requestAnimationFrame', { configurable: true, value: previousRequestAnimationFrame });
+      Object.defineProperty(globalThis, 'cancelAnimationFrame', { configurable: true, value: previousCancelAnimationFrame });
+    }
+  });
+
+  it('closes resources and reports failure when AudioContext resume is rejected', async () => {
+    class FakeAnalyser { fftSize = 512; smoothingTimeConstant = 0; getByteTimeDomainData(_data: Uint8Array) {} disconnect() {} }
+    let rejectResume!: (cause: Error) => void;
+    let createdContext!: { closed: boolean; close: () => Promise<void> };
+    class FakeAudioContext {
+      state = 'suspended';
+      closed = false;
+      constructor() { createdContext = this; }
+      createAnalyser() { return new FakeAnalyser(); }
+      createMediaStreamSource(_stream: unknown) { return { connect: (_analyser: unknown) => undefined, disconnect: () => undefined }; }
+      resume() { return new Promise<void>((_resolve, reject) => { rejectResume = reject; }); }
+      close() { this.closed = true; return Promise.resolve(); }
+    }
+    const previousAudioContext = globalThis.AudioContext;
+    const previousRequestAnimationFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: FakeAudioContext });
+    Object.defineProperty(globalThis, 'requestAnimationFrame', { configurable: true, value: () => 1 });
+    try {
+      const failures: unknown[] = [];
+      createWebAudioSpeechActivityObserver({} as never, () => undefined, (cause) => failures.push(cause));
+      rejectResume(new Error('resume denied'));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(createdContext.closed).toBe(true);
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toEqual(new Error('resume denied'));
+    } finally {
+      Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: previousAudioContext });
+      Object.defineProperty(globalThis, 'requestAnimationFrame', { configurable: true, value: previousRequestAnimationFrame });
     }
   });
 
