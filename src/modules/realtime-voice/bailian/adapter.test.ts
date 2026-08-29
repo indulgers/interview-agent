@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { BailianRealtimeVoice, createWebAudioSpeechActivityObserver, type BailianBrowserDependencies, type BailianDataChannel, type BailianPeerConnection } from './adapter';
+import { BailianRealtimeVoice, createBrowserBailianRealtimeVoice, createWebAudioSpeechActivityObserver, type BailianBrowserDependencies, type BailianDataChannel, type BailianPeerConnection } from './adapter';
 
 class FakeChannel implements BailianDataChannel {
   constructor(readonly label: string) {}
@@ -215,6 +215,59 @@ describe('BailianRealtimeVoice', () => {
     } finally {
       Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: previousAudioContext });
       Object.defineProperty(globalThis, 'requestAnimationFrame', { configurable: true, value: previousRequestAnimationFrame });
+    }
+  });
+
+  it('disconnects the production browser connection when suspended Web Audio resume is rejected', async () => {
+    class FakeAnalyser { fftSize = 512; smoothingTimeConstant = 0; getByteTimeDomainData(_data: Uint8Array) {} disconnect() {} }
+    let peer!: FakePeer;
+    let rejectResume!: (cause: Error) => void;
+    const track = new FakeTrack();
+    const audio = { autoplay: false, srcObject: null as unknown, paused: false, pause() { this.paused = true; }, remove() {} };
+    class FakeAudioContext {
+      state = 'suspended';
+      createAnalyser() { return new FakeAnalyser(); }
+      createMediaStreamSource(_stream: unknown) { return { connect: (_analyser: unknown) => undefined, disconnect: () => undefined }; }
+      resume() { return new Promise<void>((_resolve, reject) => { rejectResume = reject; }); }
+      close() { return Promise.resolve(); }
+    }
+    const originals = {
+      AudioContext: Object.getOwnPropertyDescriptor(globalThis, 'AudioContext'),
+      RTCPeerConnection: Object.getOwnPropertyDescriptor(globalThis, 'RTCPeerConnection'),
+      document: Object.getOwnPropertyDescriptor(globalThis, 'document'),
+      window: Object.getOwnPropertyDescriptor(globalThis, 'window'),
+    };
+    Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: FakeAudioContext });
+    Object.defineProperty(globalThis, 'RTCPeerConnection', { configurable: true, value: class extends FakePeer { constructor() { super(); peer = this; } } });
+    Object.defineProperty(globalThis, 'document', { configurable: true, value: { body: { append: () => undefined }, createElement: () => audio } });
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: { fetch: async () => ({ ok: true, text: async () => 'v=0\r\na=answer\r\n' }), setTimeout, clearTimeout } });
+    try {
+      const stream = { getAudioTracks: () => [track], getTracks: () => [track] };
+      const connecting = createBrowserBailianRealtimeVoice('Tina', stream as unknown as MediaStream).connect({ instructions: 'instructions', resumeFromSequence: 0 });
+      for (let attempt = 0; attempt < 5 && !peer; attempt++) await Promise.resolve();
+      await readyForPeer(peer);
+      peer.deliverInbound();
+      const connection = await connecting;
+      const events: string[] = [];
+      connection.subscribe((event) => { events.push(event.type === 'connection' ? `${event.type}:${event.state}` : event.type); });
+      const sentBeforeFailure = peer.outbound.sent.length;
+
+      rejectResume(new Error('resume denied'));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(events).toEqual(['connection:disconnected']);
+      expect(track.stopped).toBe(true);
+      expect(peer.inbound.closed).toBe(true);
+      expect(peer.outbound.closed).toBe(true);
+      expect(peer.closed).toBe(true);
+      expect(audio.paused).toBe(true);
+      await expect(connection.submitAnswer()).rejects.toThrow('实时语音连接已断开。');
+      expect(peer.outbound.sent).toHaveLength(sentBeforeFailure);
+    } finally {
+      for (const [key, descriptor] of Object.entries(originals)) {
+        if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+        else Reflect.deleteProperty(globalThis, key);
+      }
     }
   });
 

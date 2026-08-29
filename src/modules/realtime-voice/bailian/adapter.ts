@@ -126,7 +126,7 @@ export function createBrowserBailianRealtimeVoice(voice = 'Tina', mediaStream?: 
       document.body.append(audio);
       return audio;
     },
-    createSpeechActivityObserver: (stream, onSpeechStart) => createWebAudioSpeechActivityObserver(stream, onSpeechStart),
+    createSpeechActivityObserver: (stream, onSpeechStart, onFailure) => createWebAudioSpeechActivityObserver(stream, onSpeechStart, onFailure),
     now: () => Date.now(),
     sleep: (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds)),
   }, voice);
