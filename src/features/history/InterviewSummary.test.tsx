@@ -55,7 +55,12 @@ describe('InterviewSummary', () => {
   });
 
   it('renders completed feedback, a retryable failure, and an evidence-insufficient summary distinctly', () => {
-    expect(renderToStaticMarkup(<InterviewSummary detail={detail('completed')} />)).toContain('六维反馈');
+    const completed = renderToStaticMarkup(<InterviewSummary detail={detail('completed')} />);
+    expect(completed).toContain('六维反馈');
+    expect(completed).toContain('面试官观察');
+    expect(completed).toContain('清晰拆解');
+    expect(completed).toContain('证据片段');
+    expect(completed).toContain('我的回答');
     expect(renderToStaticMarkup(<InterviewSummary detail={detail('failed')} />)).toContain('重新生成反馈');
     const unavailable = renderToStaticMarkup(<InterviewSummary detail={detail('not_applicable')} />);
     expect(unavailable).toContain('本场证据不足以形成稳定的六维评价。');

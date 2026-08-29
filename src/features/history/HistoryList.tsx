@@ -8,10 +8,10 @@ function duration(ms: number | null) { if (ms === null) return '--:--'; const se
 
 export function HistoryList({ sessions }: { sessions: SessionSummary[] }) {
   const ordered = [...sessions].sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
-  if (!ordered.length) return <><AppNavigation active="history" /><div className="history-empty"><h2>还没有面试记录</h2><p>完成第一场模拟面试后，转写和反馈会出现在这里。</p><Link href="/interview">开始面试</Link></div></>;
-  return <><AppNavigation active="history" /><div className="history-list">{ordered.map((session) => <Link className="history-row" href={`/history/${session.id}`} key={session.id}>
+  if (!ordered.length) return <><AppNavigation active="history" /><div className="history-empty"><span aria-hidden="true">0</span><h2>还没有面试记录</h2><p>完成第一场模拟面试后，转写和反馈会出现在这里。</p><Link href="/interview">开始面试</Link></div></>;
+  return <><AppNavigation active="history" /><div className="history-list">{ordered.map((session) => <Link className="history-row history-card" href={`/history/${session.id}`} key={session.id}>
     <span className="history-date">{session.startedAt.toLocaleString('zh-CN', { hour12: false })}</span>
-    <strong>{session.id}</strong>
+    <strong>技术模拟面试<small>{session.id}</small></strong>
     <span className="history-badges"><i>{result[session.result]}</i><i>{duration(session.actualDurationMs)}</i><i>{feedback[session.feedbackStatus]}</i><i>{session.completeness === 'missing' ? '转写不完整' : '转写完整'}</i></span>
   </Link>)}</div></>;
 }

@@ -85,7 +85,6 @@ export function createSummaryLifecycle({ sessionId, status, fetcher, feedbackCla
   let active = true;
   let inFlight = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
   let controller: AbortController | undefined;
   const deadline = Date.now() + 60_000;
   const detailUrl = `/api/interviews/${encodeURIComponent(sessionId)}`;
@@ -157,7 +156,7 @@ export function createSummaryLifecycle({ sessionId, status, fetcher, feedbackCla
       onGenerationFailure?.();
     });
   }
-  timeoutTimer = setTimeout(() => {
+  const timeoutTimer = setTimeout(() => {
     if (!active) return;
     stop();
     onTimeout();
@@ -242,7 +241,15 @@ export function InterviewSummary({ detail }: { detail: SessionDetail }) {
   return <section className="interview-summary" aria-live="polite">
     <p className="summary-metadata">已保存 {formatDuration(current.session.actualDurationMs)} · {answerCount} 轮回答</p>
     {(status === 'pending' || status === 'generating') && <div className="summary-progress"><h2>正在分析本场回答</h2><p>{timedOut ? '仍在生成，可稍后从面试记录查看。' : pollingError ? '暂时无法更新反馈状态，请稍后从面试记录查看。' : '面试记录已保存，你可以先离开，分析会在这里自动更新。'}</p></div>}
-    {status === 'completed' && (feedback.success ? <div className="summary-completed"><h2>六维反馈</h2><div className="dimension-grid">{feedback.data.dimensions.map((item) => <article key={item.id}><span>{dimensionNames[item.id]}</span><strong>{item.insufficientEvidence ? '未充分验证' : `${item.score} / 5`}</strong><p>{item.assessment}</p><small>{item.nextStep}</small></article>)}</div><h3>优先练习建议</h3><ol className="summary-priorities">{feedback.data.priorities.map((item) => <li key={item.title}><strong>{item.title}</strong><span>{item.action}</span></li>)}</ol></div> : <div className="summary-progress"><h2>反馈已完成</h2><p>反馈内容正在同步，请稍后从面试记录查看。</p></div>)}
+    {status === 'completed' && (feedback.success ? <div className="summary-completed">
+      <div className="summary-section-heading"><p>能力概览</p><h2>六维反馈</h2></div>
+      <div className="dimension-grid">{feedback.data.dimensions.map((item) => <article key={item.id}><span>{dimensionNames[item.id]}</span><strong>{item.insufficientEvidence ? '未充分验证' : `${item.score} / 5`}</strong><p>{item.assessment}</p><small>{item.nextStep}</small></article>)}</div>
+      <div className="summary-observations">
+        <div><div className="summary-section-heading"><p>实际表现</p><h3>面试官观察</h3></div><ul>{feedback.data.strengths.map((item) => <li key={`${item.turnId}-${item.title}`}><strong>{item.title}</strong><span>{item.reason}</span></li>)}</ul></div>
+        <div><div className="summary-section-heading"><p>对话依据</p><h3>证据片段</h3></div><ul>{feedback.data.weakMoments.map((item) => <li key={`${item.turnId}-${item.title}`}><strong>{item.title}</strong><q>{current.turns.find((turn) => turn.id === item.turnId)?.text ?? item.missing}</q><span>{item.betterOutline}</span></li>)}</ul></div>
+      </div>
+      <div className="summary-section-heading"><p>下一步</p><h3>优先练习建议</h3></div><ol className="summary-priorities">{feedback.data.priorities.map((item) => <li key={item.title}><strong>{item.title}</strong><span>{item.action}</span></li>)}</ol>
+    </div> : <div className="summary-progress"><h2>反馈已完成</h2><p>反馈内容正在同步，请稍后从面试记录查看。</p></div>)}
     {status === 'failed' && <div className="summary-failed"><h2>反馈暂未生成</h2><p>已保存的转写不会丢失。</p><button type="button" onClick={retry}>重新生成反馈</button>{retryError && <p role="alert">仍未生成，请稍后再试。</p>}</div>}
     {status === 'not_applicable' && <div className="summary-not-applicable"><h2>证据不足，未生成六维评价</h2><p>本场证据不足以形成稳定的六维评价。</p></div>}
     <SummaryActions />

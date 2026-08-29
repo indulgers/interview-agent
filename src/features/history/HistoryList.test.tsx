@@ -13,5 +13,6 @@ describe('HistoryList', () => {
     const html = renderToStaticMarkup(<HistoryList sessions={[row('older', 1), row('newer', 2, { result: 'interrupted', completeness: 'missing', feedbackStatus: 'failed' })]} />);
     expect(html.indexOf('newer')).toBeLessThan(html.indexOf('older'));
     expect(html).toContain('已中断'); expect(html).toContain('01:00'); expect(html).toContain('反馈失败'); expect(html).toContain('转写不完整');
+    expect(html).toContain('history-card');
   });
 });

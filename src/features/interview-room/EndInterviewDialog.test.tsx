@@ -15,6 +15,7 @@ describe('EndInterviewDialog', () => {
     />);
 
     expect(html).toContain('role="dialog"');
+    expect(html).toContain('end-dialog');
     expect(html).toContain('aria-modal="true"');
     expect(html).toContain('已完成内容会保存并生成总结');
     expect(html).toContain('autofocus');

@@ -16,13 +16,13 @@ export function AppNavigation({ active, compact = false, onAttemptLeave }: {
   onAttemptLeave?: () => void;
 }) {
   if (compact) {
-    return <nav aria-label="主导航" className="app-navigation app-navigation-compact">
+    return <nav aria-label="主导航" className="app-navigation app-nav app-navigation-compact">
       <span className="app-navigation-brand">AI 模拟面试</span>
       <button type="button" className="app-navigation-safe-exit" onClick={onAttemptLeave}>结束并离开</button>
     </nav>;
   }
 
-  return <nav aria-label="主导航" className="app-navigation">
+  return <nav aria-label="主导航" className="app-navigation app-nav">
     <span className="app-navigation-brand">AI 模拟面试</span>
     <div className="app-navigation-links">
       {destinations.map((destination) => <Link key={destination.href} href={destination.href} aria-current={active === destination.section ? 'page' : undefined}>{destination.label}</Link>)}

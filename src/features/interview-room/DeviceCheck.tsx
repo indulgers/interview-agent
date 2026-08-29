@@ -65,20 +65,26 @@ export function DeviceCheck({ status, error, onRequest, onStart }: {
   const ready = status === 'ready';
   return (
     <main className="device-shell">
-      <section className="device-card" aria-labelledby="device-title">
-        <p className="room-kicker">45 MIN · NODE.JS FULLSTACK + AI AGENT</p>
-        <h1 id="device-title">面试将在你准备好时开始</h1>
-        <p className="device-copy">{messages[status]}</p>
-        {error && <p className="device-error" role="alert">{error}</p>}
-        <div className="device-grid" aria-label="设备要求">
-          <span>麦克风有声音</span><span>摄像头有画面</span><span>安静的空间</span>
-        </div>
-        <p className="privacy-note">本机预览，不会上传或保存音视频</p>
-        <div className="device-actions">
-          {!ready && <button className="secondary-button" type="button" onClick={onRequest} disabled={status === 'checking'}>检查设备</button>}
-          <button className="start-interview" type="button" onClick={onStart} disabled={!ready}>开始 45 分钟面试</button>
-        </div>
-      </section>
+      <div className="device-layout">
+        <section className="device-intro" aria-labelledby="device-title">
+          <p className="room-kicker">面试准备 · 45 分钟</p>
+          <h1 id="device-title">把环境调整好，<br />再从容开始。</h1>
+          <p>这是一场围绕 Node.js 全栈与 AI Agent 实践的中文模拟面试。你可以自然停顿，完成回答后再主动交给面试官。</p>
+          <ol className="device-steps">
+            <li><span>1</span><strong>检查麦克风与摄像头</strong></li>
+            <li><span>2</span><strong>调整坐姿与环境光线</strong></li>
+            <li><span>3</span><strong>准备好后开始面试</strong></li>
+          </ol>
+        </section>
+        <section className="device-card" aria-label="设备检查">
+          <div className="device-preview" aria-hidden="true"><span>摄像头预览</span><i /></div>
+          <p className={`device-status device-status--${status}`}><span aria-hidden="true" />{messages[status]}</p>
+          {error && <p className="device-error" role="alert">{error}</p>}
+          <div className="device-grid" aria-label="设备要求"><span>麦克风有声音</span><span>摄像头有画面</span><span>安静的空间</span></div>
+          <p className="privacy-note">本机预览，不会上传或保存音视频</p>
+          <div className="device-actions">{!ready && <button className="secondary-button" type="button" onClick={onRequest} disabled={status === 'checking'}>{status === 'checking' ? '正在检查…' : '检查设备'}</button>}<button className="start-interview" type="button" onClick={onStart} disabled={!ready}>开始 45 分钟面试</button></div>
+        </section>
+      </div>
     </main>
   );
 }

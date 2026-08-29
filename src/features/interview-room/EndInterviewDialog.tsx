@@ -55,10 +55,11 @@ export function EndInterviewDialog({ open, pending, error, restoreFocusTarget, o
     void Promise.resolve(onConfirm()).catch(() => { confirming.current = false; });
   };
 
-  return <div className="end-dialog-overlay" style={{ position: 'fixed', inset: 0, zIndex: 10, display: 'grid', placeItems: 'center', padding: '1rem', background: 'rgb(0 0 0 / 45%)' }}>
-    <div className="end-confirm" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId}>
+  return <div className="end-dialog-overlay">
+    <div className="end-confirm end-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId}>
+      <span className="end-dialog__mark" aria-hidden="true">?</span>
       <strong id={titleId}>确定结束这场面试？</strong>
-      <span id={descriptionId}>已完成内容会保存并生成总结。</span>
+      <span id={descriptionId}>已完成内容会保存并生成总结。你也可以继续完成当前问题。</span>
       <p ref={status} role={error ? 'alert' : 'status'} tabIndex={-1}>{error ?? (pending ? '正在保存…' : null)}</p>
       <button ref={continueButton} type="button" autoFocus disabled={pending} onClick={onCancel}>继续面试</button>
       <button ref={confirmButton} className="danger-button" type="button" disabled={pending} onClick={confirm}>{pending ? '正在保存…' : error ? '重试结束' : '确认结束并查看总结'}</button>

@@ -1,7 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import { Avatar } from './Avatar';
 import { Controls } from './Controls';
 import { InterviewRoom } from './InterviewRoom';
 
@@ -26,6 +25,10 @@ describe('interview room', () => {
     expect(html).toContain('正在思考你的回答');
     expect(html).toContain('如何处理背压');
     expect(html).toContain('本机画面 · 不保存');
+    expect(html).toContain('interviewer-portrait');
+    expect(html).toContain('/interviewer/thinking.webp');
+    expect(html).toContain('interview-room');
+    expect(html).toContain('room-sidebar');
     expect(html).not.toContain('实时转写');
   });
 
@@ -36,6 +39,7 @@ describe('interview room', () => {
       onEndAnswer={vi.fn()} onRequestEnd={vi.fn()}
     />);
     expect(html).toContain('结束面试');
+    expect(html).toContain('room-toolbar');
     expect(html).not.toContain('确定结束这场面试？');
   });
 
@@ -59,11 +63,6 @@ describe('interview room', () => {
     expect(html).toContain('保存会话结果失败');
     expect(html).toContain('重试结束');
     expect(html).toContain('请开始回答');
-  });
-
-  it('closes the avatar mouth whenever remote playback is stopped', () => {
-    expect(renderToStaticMarkup(<Avatar speaking={false} />)).toContain('avatar-mouth-closed.svg');
-    expect(renderToStaticMarkup(<Avatar speaking />)).toContain('avatar-mouth-open.svg');
   });
 
   it('uses the compact navigation safe exit while an interview is in progress', () => {

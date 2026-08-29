@@ -21,6 +21,8 @@ describe('DeviceCheck', () => {
     expect(html).toContain('开始 45 分钟面试');
     expect(html).not.toContain('disabled');
     expect(html).toContain('本机预览，不会上传或保存');
+    expect(html).toContain('device-status');
+    expect(html).toContain('device-steps');
   });
 });
 
