@@ -6,12 +6,12 @@ import { DeviceCheck, inspectMediaStream, type DeviceStatus } from './DeviceChec
 import { InterviewRoom } from './InterviewRoom';
 import { useInterviewSession } from './useInterviewSession';
 
-export function InterviewExperience({ snapshot }: { snapshot: ContentSnapshot }) {
+export function InterviewExperience({ snapshot, testMode = false }: { snapshot: ContentSnapshot; testMode?: boolean }) {
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>('idle');
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [started, setStarted] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
-  const session = useInterviewSession(snapshot, stream);
+  const session = useInterviewSession(snapshot, stream, testMode);
   useEffect(() => () => stream?.getTracks().forEach((track) => track.stop()), [stream]);
   const requestDevices = async () => {
     setDeviceStatus('checking');

@@ -6,7 +6,7 @@ import type { ContentSnapshot } from '../../modules/interview-content/types';
 import { createBrowserInterviewHistory } from '../../modules/interview-history/browser-history';
 import { createInterviewSession } from '../../modules/interview-session/machine';
 import type { InterviewSessionView } from '../../modules/interview-session/types';
-import { createBrowserBailianRealtimeVoice } from '../../modules/realtime-voice/bailian/adapter';
+import { createRuntimeVoice } from '../../modules/realtime-voice/runtime-voice';
 
 const browserClock = { now: () => Date.now() };
 const browserScheduler = {
@@ -16,14 +16,14 @@ const browserScheduler = {
   },
 };
 
-export function useInterviewSession(snapshot: ContentSnapshot, mediaStream: MediaStream | null) {
+export function useInterviewSession(snapshot: ContentSnapshot, mediaStream: MediaStream | null, testMode = false) {
   const session = useMemo(() => createInterviewSession({
     snapshot,
     history: createBrowserInterviewHistory(),
-    voice: createBrowserBailianRealtimeVoice('Tina', mediaStream ?? undefined),
+    voice: createRuntimeVoice(mediaStream ?? undefined, testMode),
     clock: browserClock,
     scheduler: browserScheduler,
-  }), [snapshot, mediaStream]);
+  }), [snapshot, mediaStream, testMode]);
   const [view, setView] = useState<InterviewSessionView>(() => session.view());
   const refresh = useCallback(() => setView(session.view()), [session]);
   useEffect(() => {

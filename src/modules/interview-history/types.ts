@@ -71,6 +71,7 @@ export interface SessionDetail {
 }
 
 export interface InterviewHistory {
+  claimFeedback(id: SessionId): Promise<boolean>;
   start(input: StartSession): Promise<SessionId>;
   appendFinalTurn(input: FinalTurn): Promise<'inserted' | 'duplicate'>;
   finish(id: SessionId, result: Exclude<SessionResult, 'in_progress'>, completeness: TranscriptCompleteness, actualDurationMs: number): Promise<void>;

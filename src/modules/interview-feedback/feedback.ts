@@ -11,7 +11,7 @@ export async function generateInterviewFeedback(sessionId: string, dependencies:
   if (!detail || detail.session.result !== 'completed' || !detail.turns.some((turn) => turn.speaker === 'candidate')) {
     throw new Error('这场面试不能生成反馈');
   }
-  await dependencies.history.setFeedback(sessionId, { status: 'generating' });
+  if (!await dependencies.history.claimFeedback(sessionId)) throw new Error('反馈正在生成或已完成');
   const prompt = buildFeedbackPrompt(detail);
   const validIds = new Set(detail.turns.map((turn) => turn.id));
   let currentPrompt = prompt;

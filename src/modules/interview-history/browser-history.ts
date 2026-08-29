@@ -12,6 +12,7 @@ async function call<T>(operation: string, input: unknown): Promise<T> {
 
 export function createBrowserInterviewHistory(): InterviewHistory {
   return {
+    claimFeedback: async () => { throw new Error('反馈只能在服务端生成'); },
     start: (input: StartSession) => call<string>('start', input),
     appendFinalTurn: (input: FinalTurn) => call<'inserted' | 'duplicate'>('append', input),
     finish: (id, result, completeness, actualDurationMs) => call<void>('finish', { id, result, completeness, actualDurationMs }),

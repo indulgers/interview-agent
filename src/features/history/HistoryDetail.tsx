@@ -14,7 +14,7 @@ export function HistoryDetail({ detail, showDelete = true }: { detail: SessionDe
   const [retryError, setRetryError] = useState(false);
   const retry = async () => {
     setRetrying(true); setRetryError(false);
-    const response = await fetch(`/api/interviews/${encodeURIComponent(detail.session.id)}/feedback`, { method: 'POST' });
+    const response = await fetch(`/api/interviews/${encodeURIComponent(detail.session.id)}/feedback`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
     if (response.ok) window.location.reload(); else { setRetryError(true); setRetrying(false); }
   };
   return <main className="detail-shell">

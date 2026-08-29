@@ -31,6 +31,7 @@ function detail(): SessionDetail {
 
 function history(input = detail()) {
   return {
+    claimFeedback: vi.fn(async () => true),
     detail: vi.fn(async () => input),
     setFeedback: vi.fn(async () => undefined),
   } as unknown as InterviewHistory;
@@ -73,5 +74,13 @@ describe('generateInterviewFeedback', () => {
     expect((await generateInterviewFeedback('session-1', { history: history(incomplete), model: { generate: vi.fn(async () => result) }, now: () => 10 })).missingTranscriptWarning).toContain('转写');
     const cancelled = detail(); cancelled.session.result = 'cancelled';
     await expect(generateInterviewFeedback('session-1', { history: history(cancelled), model: { generate: vi.fn() }, now: () => 10 })).rejects.toThrow('不能生成反馈');
+  });
+
+  it('does not call the model when another request already claimed generation', async () => {
+    const store = history();
+    vi.mocked(store.claimFeedback).mockResolvedValue(false);
+    const model = { generate: vi.fn() };
+    await expect(generateInterviewFeedback('session-1', { history: store, model, now: () => 10 })).rejects.toThrow('正在生成');
+    expect(model.generate).not.toHaveBeenCalled();
   });
 });

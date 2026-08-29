@@ -94,6 +94,12 @@ function feedbackRecord(row: typeof interviewFeedback.$inferSelect | undefined):
 
 export function createInterviewHistory(db: AppDatabase): InterviewHistory {
   return {
+    async claimFeedback(id: SessionId): Promise<boolean> {
+      nonempty(id, '会话 ID');
+      const changed = db.update(interviewFeedback).set({ status: 'generating', failureType: null, resultJson: null, generatedAt: null })
+        .where(and(eq(interviewFeedback.sessionId, id), sql`${interviewFeedback.status} in ('pending','failed')`)).run();
+      return changed.changes === 1;
+    },
     async start(input: StartSession): Promise<SessionId> {
       const id = input.id ?? randomUUID();
       const snapshot = input.snapshot;

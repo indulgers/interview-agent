@@ -35,6 +35,7 @@ class FakeTime implements Clock, Scheduler {
 }
 
 class MemoryHistory implements InterviewHistory {
+  async claimFeedback() { return true; }
   starts: StartSession[] = [];
   turns: FinalTurn[] = [];
   finishes: Array<{ id: string; result: 'completed' | 'interrupted' | 'cancelled'; completeness: 'complete' | 'missing'; actualDurationMs: number }> = [];
