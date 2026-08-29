@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Route } from '@playwright/test';
 
 type TestEvent = Record<string, unknown> & { type: string };
 type EndControl = { deferNextEnd(): void; failNextEnd(): void; finishNaturally(): Promise<void>; endCallCount(): number };
@@ -87,6 +87,17 @@ test.describe.serial('interview MVP', () => {
   test('device ready → turns → barge-in → finish → feedback retry → history → delete', async ({ page }) => {
     const apiPayloads: string[] = [];
     page.on('request', (request) => { if (request.url().includes('/api/')) apiPayloads.push(request.postData() ?? ''); });
+    const feedbackPattern = /\/api\/interviews\/[^/]+\/feedback$/;
+    let failOnce = true;
+    const failFeedback = async (route: Route) => {
+      if (failOnce) {
+        failOnce = false;
+        await route.fulfill({ status: 503, body: '{}', contentType: 'application/json' });
+        return;
+      }
+      await route.continue();
+    };
+    await page.route(feedbackPattern, failFeedback);
     await start(page);
     await emit(page, { type: 'assistant_speech', state: 'started', at: Date.now() });
     await expect(page.getByText('面试官正在提问')).toBeVisible();
@@ -102,13 +113,7 @@ test.describe.serial('interview MVP', () => {
 
     const session = await latestSession(page);
     expect(session.result).toBe('completed');
-    for (const status of ['generating', 'failed']) {
-      const response = await page.request.post('/api/interviews/session', {
-        data: { operation: 'setFeedback', input: { id: session.id, update: status === 'failed' ? { status, failureType: 'e2e' } : { status } } },
-      });
-      expect(response.ok()).toBeTruthy();
-    }
-    await page.reload();
+    await expect(page.getByRole('button', { name: '重新生成反馈' })).toBeVisible();
     const retryRequest = page.waitForRequest((request) => request.method() === 'POST' && request.url().endsWith(`/api/interviews/${session.id}/feedback`));
     await page.getByRole('button', { name: '重新生成反馈' }).click();
     await retryRequest;

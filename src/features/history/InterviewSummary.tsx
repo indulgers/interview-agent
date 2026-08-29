@@ -72,10 +72,11 @@ export async function requestFeedback(sessionId: string, fetcher: Fetcher, signa
   }
 }
 
-export function createSummaryLifecycle({ sessionId, status, fetcher, onDetail, onTimeout, onError, onGenerationFailure }: {
+export function createSummaryLifecycle({ sessionId, status, fetcher, feedbackClaim, onDetail, onTimeout, onError, onGenerationFailure }: {
   sessionId: string;
   status: Extract<FeedbackStatus, 'pending' | 'generating'>;
   fetcher: Fetcher;
+  feedbackClaim?: Promise<boolean>;
   onDetail(detail: SessionDetail): void;
   onTimeout(): void;
   onError?(): void;
@@ -86,7 +87,6 @@ export function createSummaryLifecycle({ sessionId, status, fetcher, onDetail, o
   let timer: ReturnType<typeof setTimeout> | undefined;
   let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
   let controller: AbortController | undefined;
-  let feedbackController: AbortController | undefined;
   const deadline = Date.now() + 60_000;
   const detailUrl = `/api/interviews/${encodeURIComponent(sessionId)}`;
 
@@ -95,7 +95,6 @@ export function createSummaryLifecycle({ sessionId, status, fetcher, onDetail, o
     if (timer) clearTimeout(timer);
     if (timeoutTimer) clearTimeout(timeoutTimer);
     controller?.abort();
-    feedbackController?.abort();
   };
 
   const schedule = () => {
@@ -151,8 +150,8 @@ export function createSummaryLifecycle({ sessionId, status, fetcher, onDetail, o
   };
 
   if (status === 'pending') {
-    feedbackController = new AbortController();
-    void requestFeedback(sessionId, fetcher, feedbackController.signal).then((started) => {
+    const claim = feedbackClaim ?? requestFeedback(sessionId, fetcher);
+    void claim.then((started) => {
       if (!active || started) return;
       stop();
       onGenerationFailure?.();
@@ -187,21 +186,29 @@ export function InterviewSummary({ detail }: { detail: SessionDetail }) {
   const [retryError, setRetryError] = useState(false);
   const [pollingError, setPollingError] = useState(false);
   const pendingStarted = useRef(false);
+  const pendingClaim = useRef<Promise<boolean> | null>(null);
   const retryController = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   const status = current.session.feedbackStatus;
   const feedback = FeedbackResultSchema.safeParse(current.feedback?.result);
 
-  useEffect(() => () => { mounted.current = false; retryController.current?.abort(); }, []);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; retryController.current?.abort(); };
+  }, []);
 
   useEffect(() => {
     if (status !== 'pending' && status !== 'generating') return;
-    const startsGeneration = status === 'pending' && !pendingStarted.current;
-    if (startsGeneration) pendingStarted.current = true;
+    const needsClaim = status === 'pending' && !pendingStarted.current;
+    if (needsClaim) {
+      pendingStarted.current = true;
+      pendingClaim.current ??= requestFeedback(current.session.id, fetch);
+    }
     return createSummaryLifecycle({
       sessionId: current.session.id,
-      status: startsGeneration ? 'pending' : 'generating',
+      status,
       fetcher: fetch,
+      feedbackClaim: status === 'pending' ? pendingClaim.current ?? undefined : undefined,
       onDetail: (next) => {
         setCurrent(next);
         if (next.session.feedbackStatus !== 'failed') setRetryError(false);

@@ -169,6 +169,40 @@ describe('summary lifecycle', () => {
     lifecycle.stop();
     vi.useRealTimers();
   });
+
+  it('treats a rejected detail JSON parser as terminal and does not poll again', async () => {
+    vi.useFakeTimers();
+    const onDetail = vi.fn();
+    const onError = vi.fn();
+    const fetcher = vi.fn(async () => new Response('not json', { status: 200 }));
+    const lifecycle = createSummaryLifecycle({ sessionId: 'session-1', status: 'generating', fetcher, onDetail, onTimeout: vi.fn(), onError });
+
+    await vi.advanceTimersByTimeAsync(1_500);
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect(onDetail).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    lifecycle.stop();
+    vi.useRealTimers();
+  });
+
+  it('reuses one pending claim across setup cleanup setup replay', async () => {
+    vi.useFakeTimers();
+    let resolveClaim!: (value: boolean) => void;
+    const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
+    const claim = new Promise<boolean>((resolve) => { resolveClaim = resolve; });
+    const onGenerationFailure = vi.fn();
+    const first = createSummaryLifecycle({ sessionId: 'session-1', status: 'pending', fetcher, feedbackClaim: claim, onDetail: vi.fn(), onTimeout: vi.fn(), onGenerationFailure });
+    first.stop();
+    const second = createSummaryLifecycle({ sessionId: 'session-1', status: 'pending', fetcher, feedbackClaim: claim, onDetail: vi.fn(), onTimeout: vi.fn(), onGenerationFailure });
+
+    resolveClaim(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(onGenerationFailure).not.toHaveBeenCalled();
+    second.stop();
+    vi.useRealTimers();
+  });
 });
 
 describe('feedback request', () => {
