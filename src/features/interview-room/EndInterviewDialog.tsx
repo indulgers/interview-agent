@@ -2,10 +2,11 @@
 
 import { useEffect, useId, useRef } from 'react';
 
-export function EndInterviewDialog({ open, pending, error, onCancel, onConfirm }: {
+export function EndInterviewDialog({ open, pending, error, restoreFocusTarget, onCancel, onConfirm }: {
   open: boolean;
   pending: boolean;
   error: string | null;
+  restoreFocusTarget: HTMLElement | null;
   onCancel(): void;
   onConfirm(): void | Promise<void>;
 }) {
@@ -24,7 +25,7 @@ export function EndInterviewDialog({ open, pending, error, onCancel, onConfirm }
 
   useEffect(() => {
     if (!open) return;
-    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const trigger = restoreFocusTarget ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !latest.current.pending) latest.current.onCancel();
     };
@@ -32,9 +33,9 @@ export function EndInterviewDialog({ open, pending, error, onCancel, onConfirm }
     continueButton.current?.focus();
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      trigger?.focus();
+      window.requestAnimationFrame(() => trigger?.focus());
     };
-  }, [open]);
+  }, [open, restoreFocusTarget]);
 
   useEffect(() => {
     const pendingBegan = open && pending && !wasPending.current;

@@ -1,9 +1,14 @@
 import type { NextConfig } from 'next';
 
-const nextConfig: NextConfig = {
-  // Derived only from the server process mode at startup. A browser query or
-  // user-provided public variable cannot turn the production adapter into a fake.
-  env: { INTERVIEW_COMPILED_TEST_MODE: process.env.NODE_ENV === 'test' ? '1' : '0' },
-};
+export function createNextConfig(compiledTestMode: boolean): NextConfig {
+  return {
+    // Derived only from the server process mode at startup. A browser query or
+    // user-provided public variable cannot turn the production adapter into a fake.
+    env: { INTERVIEW_COMPILED_TEST_MODE: compiledTestMode ? '1' : '0' },
+    ...(compiledTestMode ? { distDir: '.next-e2e' } : {}),
+  };
+}
+
+const nextConfig = createNextConfig(process.env.INTERVIEW_COMPILED_TEST_MODE === '1');
 
 export default nextConfig;

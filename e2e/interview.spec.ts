@@ -44,7 +44,7 @@ test.describe.serial('interview MVP', () => {
     await expect(trigger).toBeFocused();
   });
 
-  test('waits for durable end, retries a failed end, and redirects natural terminals', async ({ page }) => {
+  test('waits for durable end before navigating', async ({ page }) => {
     await start(page);
     await page.evaluate(() => (window as unknown as { __interviewE2E: EndControl }).__interviewE2E.deferNextEnd());
     await page.getByRole('button', { name: '结束面试' }).click();
@@ -53,7 +53,9 @@ test.describe.serial('interview MVP', () => {
     await expect(page).toHaveURL(/\/interview$/);
     await page.evaluate(() => (window as unknown as { __interviewE2E: EndControl }).__interviewE2E.deferNextEnd());
     await expect(page).toHaveURL(/\/history\/[\w-]+$/);
+  });
 
+  test('retains the room after a failed end and permits retry', async ({ page }) => {
     await start(page);
     await page.evaluate(() => (window as unknown as { __interviewE2E: EndControl }).__interviewE2E.failNextEnd());
     await page.getByRole('button', { name: '结束面试' }).click();
@@ -62,7 +64,9 @@ test.describe.serial('interview MVP', () => {
     await expect(page.getByText('AI 技术面试官', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: '重试结束' }).click();
     await expect(page).toHaveURL(/\/history\/[\w-]+$/);
+  });
 
+  test('routes a natural terminal state to the same summary', async ({ page }) => {
     await start(page);
     await page.evaluate(() => (window as unknown as { __interviewE2E: EndControl }).__interviewE2E.finishNaturally());
     await expect(page).toHaveURL(/\/history\/[\w-]+$/);

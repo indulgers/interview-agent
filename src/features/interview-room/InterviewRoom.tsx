@@ -33,6 +33,7 @@ export function InterviewRoom({ state, elapsedMs, currentQuestion, error, candid
   onEndInterview(): void | Promise<void>;
 }) {
   const video = useRef<HTMLVideoElement>(null);
+  const endTrigger = useRef<HTMLButtonElement>(null);
   const [microphoneOn, setMicrophoneOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
   useEffect(() => { if (video.current) video.current.srcObject = candidateStream; }, [candidateStream]);
@@ -50,7 +51,7 @@ export function InterviewRoom({ state, elapsedMs, currentQuestion, error, candid
     <Controls microphoneOn={microphoneOn} cameraOn={cameraOn}
       onToggleMicrophone={() => { toggle('audio', microphoneOn); setMicrophoneOn(!microphoneOn); }}
       onToggleCamera={() => { toggle('video', cameraOn); setCameraOn(!cameraOn); }}
-      onEndAnswer={onEndAnswer} onRequestEnd={onRequestEnd} />
-    <EndInterviewDialog open={endDialogOpen} pending={ending} error={endError} onCancel={onCancelEnd} onConfirm={onEndInterview} />
+      onEndAnswer={onEndAnswer} onRequestEnd={(trigger) => { endTrigger.current = trigger; onRequestEnd(); }} />
+    <EndInterviewDialog open={endDialogOpen} pending={ending} error={endError} restoreFocusTarget={endTrigger.current} onCancel={onCancelEnd} onConfirm={onEndInterview} />
   </main>;
 }

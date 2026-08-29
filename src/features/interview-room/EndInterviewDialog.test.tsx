@@ -9,6 +9,7 @@ describe('EndInterviewDialog', () => {
       open
       pending={false}
       error={null}
+      restoreFocusTarget={null}
       onCancel={vi.fn()}
       onConfirm={vi.fn()}
     />);
@@ -26,6 +27,7 @@ describe('EndInterviewDialog', () => {
       open
       pending
       error={null}
+      restoreFocusTarget={null}
       onCancel={vi.fn()}
       onConfirm={vi.fn()}
     />);
@@ -39,6 +41,7 @@ describe('EndInterviewDialog', () => {
       open
       pending={false}
       error="保存会话结果失败"
+      restoreFocusTarget={null}
       onCancel={vi.fn()}
       onConfirm={vi.fn()}
     />);
