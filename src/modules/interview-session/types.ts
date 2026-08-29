@@ -37,5 +37,5 @@ export interface InterviewSession {
   start(devices: DeviceReadiness): Promise<void>;
   retry(): Promise<void>;
   signalEndOfAnswer(): Promise<void>;
-  end(): Promise<void>;
+  end(): Promise<InterviewSessionView>;
 }

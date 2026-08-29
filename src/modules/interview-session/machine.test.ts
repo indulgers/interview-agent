@@ -535,6 +535,14 @@ describe('InterviewSession', () => {
     expect(session.view().result).toBe('cancelled');
   });
 
+  it('returns the persisted terminal session after ending', async () => {
+    const { session } = await started();
+
+    const terminal = await session.end();
+
+    expect(terminal).toMatchObject({ sessionId: 'session-1', result: 'cancelled', state: 'finished' });
+  });
+
   it('compacts and injects progress every ten turns, at phase transition, and after reconnect', async () => {
     const { time, voice } = await started();
     for (let index = 1; index <= 10; index++) {

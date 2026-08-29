@@ -38,6 +38,12 @@ export function useInterviewSession(snapshot: ContentSnapshot, mediaStream: Medi
     },
     retry: async () => { await session.retry(); refresh(); },
     endAnswer: async () => { await session.signalEndOfAnswer(); refresh(); },
-    end: async () => { await session.end(); refresh(); },
+    end: async () => {
+      if (!session.view().sessionId) throw new Error('面试会话尚未保存');
+      const terminal = await session.end();
+      refresh();
+      if (!terminal.sessionId || !terminal.result) throw new Error('面试会话尚未完成保存');
+      return { sessionId: terminal.sessionId, result: terminal.result };
+    },
   };
 }

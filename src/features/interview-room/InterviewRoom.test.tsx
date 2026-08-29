@@ -13,8 +13,13 @@ describe('interview room', () => {
       currentQuestion="请说说你在 Node.js 服务中如何处理背压。"
       error={null}
       candidateStream={null}
+      endDialogOpen={false}
+      ending={false}
+      endError={null}
       onEndAnswer={vi.fn()}
       onRetry={vi.fn()}
+      onRequestEnd={vi.fn()}
+      onCancelEnd={vi.fn()}
       onEndInterview={vi.fn()}
     />);
     expect(html).toContain('AI 技术面试官');
@@ -24,15 +29,36 @@ describe('interview room', () => {
     expect(html).not.toContain('实时转写');
   });
 
-  it('requires confirmation before ending the interview', () => {
+  it('offers an end-interview trigger from the control bar', () => {
     const html = renderToStaticMarkup(<Controls
-      microphoneOn cameraOn confirmEnd
+      microphoneOn cameraOn
       onToggleMicrophone={vi.fn()} onToggleCamera={vi.fn()}
-      onEndAnswer={vi.fn()} onRequestEnd={vi.fn()} onCancelEnd={vi.fn()} onConfirmEnd={vi.fn()}
+      onEndAnswer={vi.fn()} onRequestEnd={vi.fn()}
     />);
-    expect(html).toContain('确定结束这场面试？');
-    expect(html).toContain('继续面试');
-    expect(html).toContain('确认结束');
+    expect(html).toContain('结束面试');
+    expect(html).not.toContain('确定结束这场面试？');
+  });
+
+  it('keeps the room visible with a retryable ending error', () => {
+    const html = renderToStaticMarkup(<InterviewRoom
+      state="listening"
+      elapsedMs={0}
+      currentQuestion={null}
+      error={null}
+      candidateStream={null}
+      endDialogOpen
+      ending={false}
+      endError="保存会话结果失败"
+      onEndAnswer={vi.fn()}
+      onRetry={vi.fn()}
+      onRequestEnd={vi.fn()}
+      onCancelEnd={vi.fn()}
+      onEndInterview={vi.fn()}
+    />);
+
+    expect(html).toContain('保存会话结果失败');
+    expect(html).toContain('重试结束');
+    expect(html).toContain('请开始回答');
   });
 
   it('closes the avatar mouth whenever remote playback is stopped', () => {

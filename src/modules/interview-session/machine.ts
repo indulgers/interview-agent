@@ -365,10 +365,11 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
     }
   }
 
-  async function end() {
+  async function end(): Promise<InterviewSessionView> {
     await enqueue(async () => {
       if (!result) await drain(true);
     });
+    return view();
   }
 
   return {
