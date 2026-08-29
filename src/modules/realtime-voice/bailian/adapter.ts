@@ -256,7 +256,7 @@ class BailianRealtimeConnection implements RealtimeConnection {
   onConnectionStateChange() {
     if (!['disconnected', 'failed', 'closed'].includes(this.peer.connectionState) || this.unavailable) return;
     this.markUnavailable();
-    this.eventTail = this.eventTail.then(() => this.emitSafely({ type: 'connection', state: 'disconnected', at: this.dependencies.now() })).catch(() => { this.diagnostic('provider-event-handler-failed'); });
+    this.emitLifecycle({ type: 'connection', state: 'disconnected', at: this.dependencies.now() });
     this.releaseResources();
   }
 
@@ -302,16 +302,23 @@ class BailianRealtimeConnection implements RealtimeConnection {
     if (this.unavailable || !this.awaitingResponse || this.responseCancellationSent) return;
     this.responseCancellationSent = true;
     this.awaitingResponse = false;
+    let cancelFailure: unknown;
     try {
       this.send({ event_id: eventId(this.dependencies.now()), type: 'response.cancel' });
-    } catch {
-      return;
+    } catch (cause) {
+      cancelFailure = cause;
+      this.responseCancellationSent = false;
+    } finally {
+      this.audio.pause?.();
+      this.audio.srcObject = null;
+      void this.restoreOutboundAudio(true).then(() => {
+        if (cancelFailure !== undefined) {
+          this.failConnection();
+        } else if (!this.unavailable) {
+          this.enqueue(() => this.emitSafely({ type: 'candidate_speech', state: 'started', at: this.dependencies.now() }));
+        }
+      }).catch(() => this.failConnection());
     }
-    this.audio.pause?.();
-    this.audio.srcObject = null;
-    void this.restoreOutboundAudio().then(() => {
-      if (!this.unavailable) this.enqueue(() => this.emitSafely({ type: 'candidate_speech', state: 'started', at: this.dependencies.now() }));
-    }).catch(() => { /* close already owns recovery */ });
   }
 
   async cancelAssistantSpeech() {
@@ -354,7 +361,13 @@ class BailianRealtimeConnection implements RealtimeConnection {
     if (isObject(payload) && payload.type === 'session.created') { this.sessionCreated = true; if (this.inbound) this.readyResolve(); }
     if (isObject(payload) && (payload.type === 'response.done' || payload.type === 'error')) {
       this.awaitingResponse = false;
-      await this.restoreOutboundAudio();
+      let restoreFailure: unknown;
+      try { await this.restoreOutboundAudio(); } catch (cause) { restoreFailure = cause; }
+      const events = parseBailianEvent(payload, this.dependencies.now(), this.eventTiming);
+      if (events.length === 0) this.diagnostic(isObject(payload) && typeof payload.type === 'string' ? `unknown-event:${payload.type}` : 'malformed-provider-event');
+      for (const event of events) await this.emitSafely(event);
+      if (restoreFailure !== undefined) this.failConnection();
+      return;
     }
     const events = parseBailianEvent(payload, this.dependencies.now(), this.eventTiming);
     if (events.length === 0) this.diagnostic(isObject(payload) && typeof payload.type === 'string' ? `unknown-event:${payload.type}` : 'malformed-provider-event');
@@ -367,10 +380,17 @@ class BailianRealtimeConnection implements RealtimeConnection {
     this.outboundAudioAttached = false;
   }
 
-  private async restoreOutboundAudio() {
-    if (this.outboundAudioAttached || this.unavailable) return;
+  private async restoreOutboundAudio(force = false) {
+    if (this.outboundAudioAttached || (this.unavailable && !force)) return;
     await this.raceClose(this.sender.replaceTrack(this.localTrack));
     this.outboundAudioAttached = true;
+  }
+
+  private failConnection() {
+    if (this.unavailable) return;
+    this.markUnavailable();
+    this.emitLifecycle({ type: 'connection', state: 'disconnected', at: this.dependencies.now() });
+    this.releaseResources();
   }
 
   private async restoreOutboundAudioAfterFailure() {
@@ -398,7 +418,15 @@ class BailianRealtimeConnection implements RealtimeConnection {
 
   private async emitSafely(event: VoiceEvent) {
     for (const listener of this.listeners) {
+      if (this.unavailable) return;
       try { await listener(event); } catch { this.diagnostic('voice-listener-failed'); }
+    }
+  }
+
+  private emitLifecycle(event: VoiceEvent) {
+    for (const listener of this.listeners) {
+      try { Promise.resolve(listener(event)).catch(() => this.diagnostic('provider-event-handler-failed')); }
+      catch { this.diagnostic('provider-event-handler-failed'); }
     }
   }
 

@@ -129,3 +129,38 @@ exit 0
 
 - 生产 observer 依赖浏览器 `AudioContext`；连接边界仍保留可注入 observer seam，测试与非浏览器环境可使用替身。
 - 预存的 API/history/instrumentation、`next-env.d.ts` 与 `.DS_Store` dirty 改动未纳入本次提交。
+
+## Fix round 2 — 2026-08-29
+
+### 状态
+
+DONE
+
+### 审查修复
+
+- disconnect 生命周期事件绕过普通 `eventTail`，对当前 listener 独立投递；普通 payload 在 close 后不会继续进入 listener。
+- 本地 `response.cancel` 发送异常通过 `finally` 恢复 sender，清除取消锁存并报告可恢复的 disconnect 生命周期事件。
+- 终态 sender 恢复异常与 provider payload 解耦：先投递原始 `response.done` / provider `error`，再报告 disconnect。
+
+### RED → GREEN 记录
+
+- 新增的 blocked-listener disconnect、close 后迟到事件、cancel 发送失败、`response.done`/`error` 恢复失败测试先行失败。
+- 修复后上述 5 个 round 2 测试全部通过。
+
+### Fresh verification totals
+
+```text
+./node_modules/.bin/vitest run src/modules/realtime-voice src/modules/interview-session/machine.test.ts
+4 files, 77 tests passed
+./node_modules/.bin/next typegen
+Types generated successfully
+./node_modules/.bin/tsc --noEmit
+exit 0
+git diff --check
+exit 0
+```
+
+### 关注点
+
+- disconnect 生命周期现在是非串行投递；listener 自身仍需处理重复/并发生命周期事件。
+- 预存 dirty 文件保持未暂存；`.superpowers` 报告作为本轮 scratch 文件强制纳入提交。

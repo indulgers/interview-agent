@@ -8,7 +8,8 @@ class FakeChannel implements BailianDataChannel {
   onmessage: ((event: { data: unknown }) => void) | null = null;
   readonly sent: string[] = [];
   closed = false;
-  send(data: string) { this.sent.push(data); }
+  sendError: Error | null = null;
+  send(data: string) { if (this.sendError) throw this.sendError; this.sent.push(data); }
   close() { this.closed = true; this.readyState = 'closed'; }
   emit(payload: unknown) { this.onmessage?.({ data: payload }); }
 }
@@ -25,7 +26,8 @@ class FakePeer implements BailianPeerConnection {
   addTransceiverCalls: string[] = [];
   replacedTrack: FakeTrack | null = null;
   readonly replacedTracks: Array<FakeTrack | null> = [];
-  addTransceiver(kind: 'audio') { this.addTransceiverCalls.push(kind); return { sender: { replaceTrack: async (track: FakeTrack | null) => { this.replacedTrack = track; this.replacedTracks.push(track); } } }; }
+  replaceTrackError: Error | null = null;
+  addTransceiver(kind: 'audio') { this.addTransceiverCalls.push(kind); return { sender: { replaceTrack: async (track: FakeTrack | null) => { if (track && this.replaceTrackError) throw this.replaceTrackError; this.replacedTrack = track; this.replacedTracks.push(track); } } }; }
   createDataChannel(label: string) { expect(label).toBe('oai-events'); return this.outbound; }
   async createOffer() { return { type: 'offer' as const, sdp: 'v=0\r\na=offer\r\n' }; }
   async setLocalDescription() {}
@@ -263,6 +265,87 @@ describe('BailianRealtimeVoice', () => {
     expect(seen).toEqual(['started']);
     await connection.close();
     expect(activity.closed).toBe(true);
+  });
+
+  it('delivers disconnect lifecycle to other listeners while an ordinary listener is blocked', async () => {
+    const { peer, voice } = setup();
+    const connectionPromise = voice.connect({ instructions: 'instructions', resumeFromSequence: 0 }); await readyForPeer(peer); peer.deliverInbound();
+    const connection = await connectionPromise;
+    let release!: () => void;
+    const seen: string[] = [];
+    connection.subscribe((event) => event.type === 'candidate_speech' && event.state === 'started'
+      ? new Promise<void>((resolve) => { release = resolve; })
+      : undefined);
+    connection.subscribe((event) => { seen.push(event.type === 'connection' ? event.state : event.type); });
+    peer.inbound.emit(JSON.stringify({ type: 'input_audio_buffer.speech_started', item_id: 'blocked', audio_start_ms: 1 }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    peer.connectionState = 'disconnected';
+    peer.onconnectionstatechange?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(seen).toContain('disconnected');
+    release();
+    await connection.close();
+  });
+
+  it('suppresses ordinary provider events queued before close resolves', async () => {
+    const { peer, voice } = setup();
+    const connectionPromise = voice.connect({ instructions: 'instructions', resumeFromSequence: 0 }); await readyForPeer(peer); peer.deliverInbound();
+    const connection = await connectionPromise;
+    let release!: () => void;
+    const seen: string[] = [];
+    connection.subscribe((event) => event.type === 'candidate_speech' && event.state === 'started'
+      ? new Promise<void>((resolve) => { release = resolve; })
+      : void seen.push(event.type));
+    peer.inbound.emit(JSON.stringify({ type: 'input_audio_buffer.speech_started', item_id: 'blocked', audio_start_ms: 1 }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    peer.inbound.emit(JSON.stringify({ type: 'response.created', response: { id: 'late', status: 'in_progress' } }));
+
+    await connection.close();
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(seen).not.toContain('response');
+    expect(seen).not.toContain('assistant_speech');
+  });
+
+  it('restores the sender and reports disconnect when local cancel sending fails', async () => {
+    const { peer, track, activity, voice } = setup();
+    const connectionPromise = voice.connect({ instructions: 'instructions', resumeFromSequence: 0 }); await readyForPeer(peer); peer.deliverInbound();
+    const connection = await connectionPromise;
+    const seen: string[] = [];
+    connection.subscribe((event) => { if (event.type === 'connection') seen.push(event.state); });
+    await connection.submitAnswer();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    peer.outbound.sendError = new Error('cancel failed');
+
+    activity.emitSpeechStart();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(peer.replacedTrack).toBe(track);
+    expect(seen).toEqual(['disconnected']);
+    await connection.close();
+  });
+
+  it.each(['response.done', 'error'] as const)('delivers %s before reporting sender restoration failure', async (terminal) => {
+    const { peer, voice } = setup();
+    const connectionPromise = voice.connect({ instructions: 'instructions', resumeFromSequence: 0 }); await readyForPeer(peer); peer.deliverInbound();
+    const connection = await connectionPromise;
+    const seen: string[] = [];
+    connection.subscribe((event) => { seen.push(event.type === 'connection' ? `connection:${event.state}` : event.type); });
+    await connection.submitAnswer();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    peer.replaceTrackError = new Error('restore failed');
+
+    peer.inbound.emit(terminal === 'response.done'
+      ? JSON.stringify({ type: terminal, response: { id: 'response-1', status: 'completed' } })
+      : JSON.stringify({ type: terminal, error: { type: 'server_error', code: 'response_failed', message: 'provider detail' } }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(seen).toContain(terminal === 'response.done' ? 'assistant_speech' : 'error');
+    expect(seen).toContain('connection:disconnected');
+    await connection.close();
   });
 
   it.each(['disconnect', 'close'] as const)('settles a submit blocked behind a listener when the connection must %s', async (ending) => {
