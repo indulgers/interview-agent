@@ -88,10 +88,10 @@ test.describe.serial('interview MVP', () => {
     const apiPayloads: string[] = [];
     page.on('request', (request) => { if (request.url().includes('/api/')) apiPayloads.push(request.postData() ?? ''); });
     const feedbackPattern = /\/api\/interviews\/[^/]+\/feedback$/;
-    let failOnce = true;
+    let feedbackPostCount = 0;
     const failFeedback = async (route: Route) => {
-      if (failOnce) {
-        failOnce = false;
+      feedbackPostCount += 1;
+      if (feedbackPostCount <= 2) {
         await route.fulfill({ status: 503, body: '{}', contentType: 'application/json' });
         return;
       }
@@ -113,10 +113,13 @@ test.describe.serial('interview MVP', () => {
 
     const session = await latestSession(page);
     expect(session.result).toBe('completed');
+    await expect.poll(() => feedbackPostCount).toBe(1);
     await expect(page.getByRole('button', { name: '重新生成反馈' })).toBeVisible();
-    const retryRequest = page.waitForRequest((request) => request.method() === 'POST' && request.url().endsWith(`/api/interviews/${session.id}/feedback`));
     await page.getByRole('button', { name: '重新生成反馈' }).click();
-    await retryRequest;
+    await expect.poll(() => feedbackPostCount).toBe(2);
+    await expect(page.getByRole('button', { name: '重新生成反馈' })).toBeVisible();
+    await page.getByRole('button', { name: '重新生成反馈' }).click();
+    await expect.poll(() => feedbackPostCount).toBe(3);
     await expect(page.getByText('项目真实性与个人贡献')).toBeVisible({ timeout: 8_000 });
     const detailResponse = await page.request.get(`/api/interviews/${session.id}`);
     const serialized = JSON.stringify(await detailResponse.json());

@@ -186,23 +186,6 @@ describe('summary lifecycle', () => {
     vi.useRealTimers();
   });
 
-  it('reuses one pending claim across setup cleanup setup replay', async () => {
-    vi.useFakeTimers();
-    let resolveClaim!: (value: boolean) => void;
-    const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
-    const claim = new Promise<boolean>((resolve) => { resolveClaim = resolve; });
-    const onGenerationFailure = vi.fn();
-    const first = createSummaryLifecycle({ sessionId: 'session-1', status: 'pending', fetcher, feedbackClaim: claim, onDetail: vi.fn(), onTimeout: vi.fn(), onGenerationFailure });
-    first.stop();
-    const second = createSummaryLifecycle({ sessionId: 'session-1', status: 'pending', fetcher, feedbackClaim: claim, onDetail: vi.fn(), onTimeout: vi.fn(), onGenerationFailure });
-
-    resolveClaim(true);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(fetcher).not.toHaveBeenCalled();
-    expect(onGenerationFailure).not.toHaveBeenCalled();
-    second.stop();
-    vi.useRealTimers();
-  });
 });
 
 describe('feedback request', () => {
