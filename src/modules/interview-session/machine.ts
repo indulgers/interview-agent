@@ -116,6 +116,11 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
     responseHint = false;
   };
 
+  const invalidateAnswerSubmission = () => {
+    answerSubmissionPromise = null;
+    answerSubmission = 'idle';
+  };
+
   const view = (): InterviewSessionView => ({
     sessionId: id,
     state,
@@ -178,6 +183,7 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
     clear(drainCancellation);
     pause();
     epoch++;
+    invalidateAnswerSubmission();
     await safeClose(connection);
 
     const terminal = wanted === 'completed' && !hasCandidateAnswer ? 'cancelled' : wanted;
@@ -262,6 +268,7 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
     pause();
     state = 'reconnecting';
     const token = ++epoch;
+    invalidateAnswerSubmission();
     unsubscribe?.();
     unsubscribe = null;
     void safeClose(connection);
@@ -428,12 +435,12 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
       submission = (async () => {
         try {
           await target.submitAnswer();
-          if (token === epoch && connection === target && !result && !finalizing) {
+          if (token === epoch && connection === target && answerSubmissionPromise === submission && !result && !finalizing) {
             answerSubmission = 'idle';
             if (state === 'listening') state = 'thinking';
           }
         } catch (cause) {
-          if (!result && !finalizing) answerSubmission = 'failed';
+          if (token === epoch && connection === target && answerSubmissionPromise === submission && !result && !finalizing) answerSubmission = 'failed';
           throw cause;
         } finally {
           if (answerSubmissionPromise === submission) answerSubmissionPromise = null;

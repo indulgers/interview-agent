@@ -201,6 +201,31 @@ describe('InterviewSession', () => {
     expect(session.view().answerSubmission).toBe('failed');
   });
 
+  it('invalidates a pending submission on disconnect and lets the reconnected voice submit without late old mutations', async () => {
+    const { voice, session } = await started();
+    let releaseOld!: () => void;
+    voice.connections[0]?.deferSubmit(new Promise<void>((resolve) => { releaseOld = resolve; }));
+    const oldSubmission = session.signalEndOfAnswer();
+    let oldRejection: unknown;
+    void oldSubmission.catch((cause) => { oldRejection = cause; });
+    expect(session.view().answerSubmission).toBe('submitting');
+
+    await voice.emit({ type: 'connection', state: 'disconnected', at: 0 });
+    await flush();
+    expect(oldRejection).toEqual(new Error('实时语音连接已断开。'));
+    expect(session.view()).toMatchObject({ state: 'listening', answerSubmission: 'idle' });
+
+    await session.signalEndOfAnswer();
+    expect(voice.connections[1]?.submitAnswerCount).toBe(1);
+    expect(session.view()).toMatchObject({ state: 'thinking', answerSubmission: 'idle' });
+
+    releaseOld();
+    await oldSubmission.catch(() => undefined);
+    await flush();
+    expect(session.view()).toMatchObject({ state: 'thinking', answerSubmission: 'idle' });
+    expect(voice.connections[1]?.submitAnswerCount).toBe(1);
+  });
+
   it('pauses immediately on disconnect, reconnects within 20 seconds, and does not count the pause', async () => {
     const { time, voice, session } = await started();
     time.advance(1_000);

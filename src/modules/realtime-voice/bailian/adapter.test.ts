@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { BailianRealtimeVoice, type BailianBrowserDependencies, type BailianDataChannel, type BailianPeerConnection } from './adapter';
+import { BailianRealtimeVoice, createWebAudioSpeechActivityObserver, type BailianBrowserDependencies, type BailianDataChannel, type BailianPeerConnection } from './adapter';
 
 class FakeChannel implements BailianDataChannel {
   constructor(readonly label: string) {}
@@ -24,7 +24,8 @@ class FakePeer implements BailianPeerConnection {
   closed = false;
   addTransceiverCalls: string[] = [];
   replacedTrack: FakeTrack | null = null;
-  addTransceiver(kind: 'audio') { this.addTransceiverCalls.push(kind); return { sender: { replaceTrack: async (track: FakeTrack | null) => { this.replacedTrack = track; } } }; }
+  readonly replacedTracks: Array<FakeTrack | null> = [];
+  addTransceiver(kind: 'audio') { this.addTransceiverCalls.push(kind); return { sender: { replaceTrack: async (track: FakeTrack | null) => { this.replacedTrack = track; this.replacedTracks.push(track); } } }; }
   createDataChannel(label: string) { expect(label).toBe('oai-events'); return this.outbound; }
   async createOffer() { return { type: 'offer' as const, sdp: 'v=0\r\na=offer\r\n' }; }
   async setLocalDescription() {}
@@ -44,6 +45,13 @@ class FakeTrack {
   stop() { this.stopped = true; }
 }
 
+class FakeSpeechActivityObserver {
+  closed = false;
+  onSpeechStart: (() => void) | null = null;
+  emitSpeechStart() { this.onSpeechStart?.(); }
+  close() { this.closed = true; }
+}
+
 function setup(options: { fetch?: BailianBrowserDependencies['fetch']; play?: () => Promise<void>; iceGatheringState?: FakePeer['iceGatheringState']; now?: () => number; sleep?: (milliseconds: number) => Promise<void> } = {}) {
   const peer = new FakePeer();
   if (options.iceGatheringState) peer.iceGatheringState = options.iceGatheringState;
@@ -51,6 +59,7 @@ function setup(options: { fetch?: BailianBrowserDependencies['fetch']; play?: ()
   const audio = { autoplay: false, srcObject: null as unknown, paused: false, play: options.play, pause() { this.paused = true; }, remove() {} };
   const waits: Array<() => void> = [];
   const diagnostics: string[] = [];
+  const activity = new FakeSpeechActivityObserver();
   const deps: BailianBrowserDependencies = {
     createPeerConnection: () => peer,
     getUserMedia: async () => ({ getAudioTracks: () => [track], getTracks: () => [track] }),
@@ -60,6 +69,7 @@ function setup(options: { fetch?: BailianBrowserDependencies['fetch']; play?: ()
       return { ok: true, text: async () => 'v=0\r\na=answer\r\n' };
     }),
     createAudioElement: () => audio,
+    createSpeechActivityObserver: (_stream, onSpeechStart) => { activity.onSpeechStart = onSpeechStart; return activity; },
     now: options.now ?? (() => 1_728_000_000_000),
     sleep: options.sleep ?? (() => new Promise<void>((resolve) => waits.push(resolve))),
     scheduleTimeout: (callback) => { waits.push(callback); return callback; },
@@ -69,7 +79,7 @@ function setup(options: { fetch?: BailianBrowserDependencies['fetch']; play?: ()
     },
     onDiagnostic: (eventName) => diagnostics.push(eventName),
   };
-  return { peer, track, audio, waits, diagnostics, voice: new BailianRealtimeVoice(deps) };
+  return { peer, track, audio, activity, waits, diagnostics, voice: new BailianRealtimeVoice(deps) };
 }
 
 async function expirePendingSleeps(waits: Array<() => void>, complete: () => boolean) {
@@ -85,6 +95,48 @@ async function readyForPeer(peer: FakePeer) {
 }
 
 describe('BailianRealtimeVoice', () => {
+  it('detects sustained local speech energy and closes the Web Audio observer cleanly', () => {
+    class FakeAnalyser {
+      fftSize = 0;
+      smoothingTimeConstant = 0;
+      level = 128;
+      getByteTimeDomainData(data: Uint8Array) { data.fill(this.level); }
+      disconnect() {}
+    }
+    let createdContext: FakeAudioContext | null = null;
+    class FakeAudioContext {
+      readonly analyser = new FakeAnalyser();
+      closed = false;
+      constructor() { createdContext = this; }
+      createAnalyser() { return this.analyser; }
+      createMediaStreamSource(_stream: unknown) { return { connect: (_analyser: unknown) => undefined, disconnect: () => undefined }; }
+      close() { this.closed = true; return Promise.resolve(); }
+    }
+    const previousAudioContext = globalThis.AudioContext;
+    const previousRequestAnimationFrame = globalThis.requestAnimationFrame;
+    const previousCancelAnimationFrame = globalThis.cancelAnimationFrame;
+    let frame: FrameRequestCallback | null = null;
+    Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: FakeAudioContext });
+    Object.defineProperty(globalThis, 'requestAnimationFrame', { configurable: true, value: (callback: FrameRequestCallback) => { frame = callback; return 1; } });
+    Object.defineProperty(globalThis, 'cancelAnimationFrame', { configurable: true, value: () => { frame = null; } });
+    try {
+      const speechStarts: number[] = [];
+      const observer = createWebAudioSpeechActivityObserver({} as never, () => speechStarts.push(1));
+      expect(createdContext).not.toBeNull();
+      expect(frame).not.toBeNull();
+      createdContext!.analyser.level = 160;
+      (frame as unknown as FrameRequestCallback)(0);
+      (frame as unknown as FrameRequestCallback)(16);
+      expect(speechStarts).toHaveLength(1);
+      observer.close();
+      expect(createdContext!.closed).toBe(true);
+    } finally {
+      Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: previousAudioContext });
+      Object.defineProperty(globalThis, 'requestAnimationFrame', { configurable: true, value: previousRequestAnimationFrame });
+      Object.defineProperty(globalThis, 'cancelAnimationFrame', { configurable: true, value: previousCancelAnimationFrame });
+    }
+  });
+
   it('negotiates injected WebRTC/media boundaries and configures manual answer submission', async () => {
     const { peer, track, audio, waits, voice } = setup();
     const connected = voice.connect({ instructions: '只问一个技术问题。', resumeFromSequence: 3 });
@@ -140,19 +192,21 @@ describe('BailianRealtimeVoice', () => {
     await connection.close();
   });
 
-  it('submits an answer with ordered provider commands and keeps the local track muted until response completion', async () => {
+  it('submits an answer with ordered provider commands while keeping the source microphone enabled', async () => {
     const { peer, track, audio, voice } = setup();
     const connectionPromise = voice.connect({ instructions: 'instructions', resumeFromSequence: 0 }); await readyForPeer(peer); peer.deliverInbound(); peer.deliverRemoteAudio('remote');
     const connection = await connectionPromise;
     const submission = connection.submitAnswer();
-    await Promise.resolve();
-    expect(track.enabled).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(track.enabled).toBe(true);
+    expect(peer.replacedTrack).toBeNull();
     expect(peer.outbound.sent.slice(-2).map((value) => JSON.parse(value).type)).toEqual([
       'input_audio_buffer.commit',
       'response.create',
     ]);
     await submission;
-    expect(track.enabled).toBe(false);
+    expect(track.enabled).toBe(true);
+    expect(peer.replacedTrack).toBeNull();
     peer.inbound.emit(JSON.stringify({ type: 'response.done', response: { id: 'response-1', status: 'completed' } }));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(track.enabled).toBe(true);
@@ -169,8 +223,9 @@ describe('BailianRealtimeVoice', () => {
     const first = connection.submitAnswer();
     const concurrent = connection.submitAnswer();
     expect(concurrent).toBe(first);
-    await Promise.resolve();
-    expect(track.enabled).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(track.enabled).toBe(true);
+    expect(peer.replacedTrack).toBeNull();
     expect(peer.outbound.sent.slice(-2).map((value) => JSON.parse(value).type)).toEqual([
       'input_audio_buffer.commit',
       'response.create',
@@ -179,34 +234,112 @@ describe('BailianRealtimeVoice', () => {
     void first.then(() => { settled = true; });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(settled).toBe(true);
-    expect(track.enabled).toBe(false);
+    expect(track.enabled).toBe(true);
+    expect(peer.replacedTrack).toBeNull();
     peer.inbound.emit(JSON.stringify({ type: 'response.done', response: { id: 'response-1', status: 'completed' } }));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(track.enabled).toBe(true);
     await connection.close();
   });
 
-  it('restores a muted track when the connection closes before a submitted response completes', async () => {
+  it('cancels one active response from local speech, restores outbound audio, emits candidate speech once, and cleans up observation', async () => {
+    const { peer, track, activity, voice } = setup();
+    const connectionPromise = voice.connect({ instructions: 'instructions', resumeFromSequence: 0 }); await readyForPeer(peer); peer.deliverInbound();
+    const connection = await connectionPromise;
+    const seen: string[] = [];
+    connection.subscribe((event) => { if (event.type === 'candidate_speech') seen.push(event.state); });
+    await connection.submitAnswer();
+    expect(track.enabled).toBe(true);
+    expect(peer.replacedTrack).toBeNull();
+    peer.inbound.emit(JSON.stringify({ type: 'response.created', response: { id: 'response-1', status: 'in_progress' } }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    activity.emitSpeechStart();
+    activity.emitSpeechStart();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(peer.outbound.sent.map((value) => JSON.parse(value).type).filter((type) => type === 'response.cancel')).toEqual(['response.cancel']);
+    expect(peer.replacedTrack).toBe(track);
+    expect(seen).toEqual(['started']);
+    await connection.close();
+    expect(activity.closed).toBe(true);
+  });
+
+  it.each(['disconnect', 'close'] as const)('settles a submit blocked behind a listener when the connection must %s', async (ending) => {
+    const { peer, voice } = setup();
+    const connectionPromise = voice.connect({ instructions: 'instructions', resumeFromSequence: 0 }); await readyForPeer(peer); peer.deliverInbound();
+    const connection = await connectionPromise;
+    let release!: () => void;
+    connection.subscribe((event) => event.type === 'candidate_speech'
+      ? new Promise<void>((resolve) => { release = resolve; })
+      : undefined);
+    peer.inbound.emit(JSON.stringify({ type: 'input_audio_buffer.speech_started', item_id: 'blocked-user', audio_start_ms: 10 }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const submission = connection.submitAnswer();
+    let rejection: unknown;
+    void submission.catch((cause) => { rejection = cause; });
+    let closing: Promise<void> | undefined;
+    let closeSettled = false;
+    if (ending === 'disconnect') {
+      peer.connectionState = 'disconnected';
+      peer.onconnectionstatechange?.();
+    } else {
+      closing = connection.close();
+      void closing.then(() => { closeSettled = true; });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(rejection).toEqual(new Error('实时语音连接已断开。'));
+    if (ending === 'close') expect(closeSettled).toBe(true);
+    release();
+    await submission.catch(() => undefined);
+    await closing;
+  });
+
+  it('restores outbound audio before delivering a terminal response to blocking listeners', async () => {
     const { peer, track, voice } = setup();
     const connectionPromise = voice.connect({ instructions: 'instructions', resumeFromSequence: 0 }); await readyForPeer(peer); peer.deliverInbound();
     const connection = await connectionPromise;
     await connection.submitAnswer();
-    expect(track.enabled).toBe(false);
+    expect(peer.replacedTrack).toBeNull();
+    let release!: () => void;
+    connection.subscribe((event) => event.type === 'assistant_speech' && event.state === 'stopped'
+      ? new Promise<void>((resolve) => { release = resolve; })
+      : undefined);
+
+    peer.inbound.emit(JSON.stringify({ type: 'response.done', response: { id: 'response-1', status: 'completed' } }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(peer.replacedTrack).toBe(track);
+    release();
+    await connection.close();
+  });
+
+  it('keeps the source microphone enabled when the connection closes before a submitted response completes', async () => {
+    const { peer, track, voice } = setup();
+    const connectionPromise = voice.connect({ instructions: 'instructions', resumeFromSequence: 0 }); await readyForPeer(peer); peer.deliverInbound();
+    const connection = await connectionPromise;
+    await connection.submitAnswer();
+    expect(track.enabled).toBe(true);
+    expect(peer.replacedTrack).toBeNull();
     await connection.close();
     expect(track.enabled).toBe(true);
   });
 
-  it('restores a muted track when a submitted response fails', async () => {
+  it('restores the outbound sender when a submitted response fails', async () => {
     const { peer, track, voice } = setup();
     const connectionPromise = voice.connect({ instructions: 'instructions', resumeFromSequence: 0 }); await readyForPeer(peer); peer.deliverInbound();
     const connection = await connectionPromise;
     await connection.submitAnswer();
-    expect(track.enabled).toBe(false);
+    expect(track.enabled).toBe(true);
+    expect(peer.replacedTrack).toBeNull();
 
     peer.inbound.emit(JSON.stringify({ type: 'error', error: { type: 'server_error', code: 'response_failed', message: 'provider detail' } }));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(track.enabled).toBe(true);
+    expect(peer.replacedTrack).toBe(track);
     await connection.close();
   });
 

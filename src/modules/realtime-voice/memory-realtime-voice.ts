@@ -19,6 +19,8 @@ export class MemoryRealtimeConnection implements RealtimeConnection {
   private injectFailure: Error | null = null;
   private cancelGate: Promise<void> | null = null;
   private submitGate: Promise<void> | null = null;
+  private closeResolve!: () => void;
+  private readonly closeSignal = new Promise<void>((resolve) => { this.closeResolve = resolve; });
 
   subscribe(listener: (event: VoiceEvent) => void | Promise<void>) {
     this.listeners.add(listener);
@@ -57,7 +59,10 @@ export class MemoryRealtimeConnection implements RealtimeConnection {
     if (failure) return Promise.reject(failure);
     const gate = this.submitGate ?? Promise.resolve();
     this.submitGate = null;
-    return gate;
+    return Promise.race([
+      gate,
+      this.closeSignal.then(() => { throw new Error('实时语音连接已断开。'); }),
+    ]);
   }
 
   async cancelAssistantSpeech() {
@@ -78,6 +83,7 @@ export class MemoryRealtimeConnection implements RealtimeConnection {
 
   async close() {
     this.closed = true;
+    this.closeResolve();
     const failure = this.closeFailure;
     this.closeFailure = null;
     if (failure) throw failure;
