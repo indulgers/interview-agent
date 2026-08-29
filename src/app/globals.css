@@ -36,6 +36,7 @@ a {
 .app-navigation-links a:hover, .app-navigation-safe-exit:hover { color: var(--accent-dark); background: #edf3ef; }
 .app-navigation-links a:focus-visible, .app-navigation-safe-exit:focus-visible, .summary-actions a:focus-visible, .summary-failed button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .app-navigation-compact { min-height: 0; flex: 1; padding: 0; border: 0; }
+.app-navigation-compact .app-navigation-brand { color: var(--studio-text); }
 .app-navigation-safe-exit { border: 1px solid var(--studio-line); background: transparent; color: var(--studio-text); cursor: pointer; }
 
 .home-shell {

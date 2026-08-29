@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { SessionDetail } from '../../modules/interview-history/types';
-import { createSummaryLifecycle, InterviewSummary } from './InterviewSummary';
+import { createSummaryLifecycle, InterviewSummary, requestFeedback, SessionDetailSchema } from './InterviewSummary';
 
 const feedbackResult = {
   dimensions: [
@@ -32,10 +32,11 @@ const feedbackResult = {
 };
 
 function detail(feedbackStatus: SessionDetail['session']['feedbackStatus']): SessionDetail {
+  const isNotApplicable = feedbackStatus === 'not_applicable';
   return {
-    session: { id: 'session-1', startedAt: new Date(0), endedAt: new Date(60_000), targetDurationMs: 2_700_000, actualDurationMs: 60_000, result: 'completed', completeness: 'complete', feedbackStatus, hasTranscriptGap: false },
+    session: { id: 'session-1', startedAt: new Date(0), endedAt: new Date(60_000), targetDurationMs: 2_700_000, actualDurationMs: 60_000, result: isNotApplicable ? 'cancelled' : 'completed', completeness: 'complete', feedbackStatus, hasTranscriptGap: false },
     snapshot: { version: '2026-08-29', hash: 'a'.repeat(64), candidateProfileVersion: '2026-08-29', candidateProfileHash: 'b'.repeat(64), interviewBriefVersion: '2026-08-29', interviewBriefHash: 'c'.repeat(64), candidateProfile: '画像', interviewBrief: '说明' },
-    turns: [{ id: 'candidate-1', providerTurnId: 'provider-1', sequence: 1, speaker: 'candidate', text: '我的回答', startedAt: null, endedAt: null, hasGap: false }],
+    turns: isNotApplicable ? [] : [{ id: 'candidate-1', providerTurnId: 'provider-1', sequence: 1, speaker: 'candidate', text: '我的回答', startedAt: null, endedAt: null, hasGap: false }],
     feedback: feedbackStatus === 'completed' ? { status: 'completed', failureType: null, result: feedbackResult, generatedAt: new Date(60_000) } : { status: feedbackStatus, failureType: null, result: null, generatedAt: null },
   };
 }
@@ -57,8 +58,28 @@ describe('InterviewSummary', () => {
     expect(renderToStaticMarkup(<InterviewSummary detail={detail('completed')} />)).toContain('六维反馈');
     expect(renderToStaticMarkup(<InterviewSummary detail={detail('failed')} />)).toContain('重新生成反馈');
     const unavailable = renderToStaticMarkup(<InterviewSummary detail={detail('not_applicable')} />);
-    expect(unavailable).toContain('证据不足');
+    expect(unavailable).toContain('本场证据不足以形成稳定的六维评价。');
     expect(unavailable).not.toContain('项目真实性与个人贡献');
+  });
+});
+
+describe('SessionDetailSchema', () => {
+  it('accepts a pending detail without a feedback wrapper and materializes serialized dates', () => {
+    const pending = detail('pending');
+    pending.feedback = null;
+
+    const parsed = SessionDetailSchema.parse(JSON.parse(JSON.stringify(pending)));
+
+    expect(parsed.feedback).toBeNull();
+    expect(parsed.session.startedAt).toBeInstanceOf(Date);
+    expect(parsed.session.endedAt).toBeInstanceOf(Date);
+  });
+
+  it('rejects a completed detail whose feedback result is malformed', () => {
+    const completed = detail('completed');
+    completed.feedback = { status: 'completed', failureType: null, result: { dimensions: [] }, generatedAt: new Date(60_000) };
+
+    expect(() => SessionDetailSchema.parse(JSON.parse(JSON.stringify(completed)))).toThrow();
   });
 });
 
@@ -82,6 +103,8 @@ describe('summary lifecycle', () => {
 
     resolveDetail?.(Response.json(detail('completed')));
     await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(9_000);
+    expect(fetcher).toHaveBeenCalledTimes(2);
     lifecycle.stop();
     vi.useRealTimers();
   });
@@ -116,5 +139,48 @@ describe('summary lifecycle', () => {
     expect(signal?.aborted).toBe(true);
     lifecycle.stop();
     vi.useRealTimers();
+  });
+
+  it('keeps the last valid detail and stops polling when the detail response is malformed', async () => {
+    vi.useFakeTimers();
+    const onDetail = vi.fn();
+    const onError = vi.fn();
+    const fetcher = vi.fn(async () => Response.json({ session: { id: 'broken' } }));
+    const lifecycle = createSummaryLifecycle({ sessionId: 'session-1', status: 'generating', fetcher, onDetail, onTimeout: vi.fn(), onError });
+
+    await vi.advanceTimersByTimeAsync(1_500);
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect(onDetail).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    lifecycle.stop();
+    vi.useRealTimers();
+  });
+
+  it('stops polling with a recoverable error after a non-success detail response', async () => {
+    vi.useFakeTimers();
+    const onError = vi.fn();
+    const fetcher = vi.fn(async () => new Response(null, { status: 503 }));
+    const lifecycle = createSummaryLifecycle({ sessionId: 'session-1', status: 'generating', fetcher, onDetail: vi.fn(), onTimeout: vi.fn(), onError });
+
+    await vi.advanceTimersByTimeAsync(7_500);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    lifecycle.stop();
+    vi.useRealTimers();
+  });
+});
+
+describe('feedback request', () => {
+  it('reports a successful generation claim', async () => {
+    await expect(requestFeedback('session-1', async () => new Response(null, { status: 204 }))).resolves.toBe(true);
+  });
+
+  it.each([
+    ['a rejected POST', async () => { throw new Error('offline'); }],
+    ['a non-success POST', async () => new Response(null, { status: 503 })],
+  ])('allows another retry after %s', async (_label, fetcher) => {
+    await expect(requestFeedback('session-1', fetcher)).resolves.toBe(false);
+    await expect(requestFeedback('session-1', async () => new Response(null, { status: 204 }))).resolves.toBe(true);
   });
 });

@@ -44,6 +44,13 @@ test.describe.serial('interview MVP', () => {
     await expect(trigger).toBeFocused();
   });
 
+  test('compact room exit opens the end confirmation flow', async ({ page }) => {
+    await start(page);
+    await page.getByRole('button', { name: '结束并离开' }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page.getByRole('button', { name: '继续面试' })).toBeVisible();
+  });
+
   test('waits for durable end before navigating', async ({ page }) => {
     await start(page);
     await page.evaluate(() => (window as unknown as { __interviewE2E: EndControl }).__interviewE2E.deferNextEnd());
@@ -95,14 +102,16 @@ test.describe.serial('interview MVP', () => {
 
     const session = await latestSession(page);
     expect(session.result).toBe('completed');
-    let failOnce = true;
-    await page.route(`**/api/interviews/${session.id}/feedback`, async (route) => {
-      if (failOnce) { failOnce = false; await route.fulfill({ status: 400, body: '{}', contentType: 'application/json' }); }
-      else await route.continue();
-    });
-    await page.getByRole('button', { name: '重试生成反馈' }).click();
-    await expect(page.getByText('仍未生成，请稍后再试。')).toBeVisible();
-    await page.getByRole('button', { name: '重试生成反馈' }).click();
+    for (const status of ['generating', 'failed']) {
+      const response = await page.request.post('/api/interviews/session', {
+        data: { operation: 'setFeedback', input: { id: session.id, update: status === 'failed' ? { status, failureType: 'e2e' } : { status } } },
+      });
+      expect(response.ok()).toBeTruthy();
+    }
+    await page.reload();
+    const retryRequest = page.waitForRequest((request) => request.method() === 'POST' && request.url().endsWith(`/api/interviews/${session.id}/feedback`));
+    await page.getByRole('button', { name: '重新生成反馈' }).click();
+    await retryRequest;
     await expect(page.getByText('项目真实性与个人贡献')).toBeVisible({ timeout: 8_000 });
     const detailResponse = await page.request.get(`/api/interviews/${session.id}`);
     const serialized = JSON.stringify(await detailResponse.json());
