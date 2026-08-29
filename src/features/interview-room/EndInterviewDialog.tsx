@@ -10,15 +10,23 @@ export function EndInterviewDialog({ open, pending, error, onCancel, onConfirm }
   onConfirm(): void | Promise<void>;
 }) {
   const continueButton = useRef<HTMLButtonElement>(null);
+  const confirmButton = useRef<HTMLButtonElement>(null);
+  const status = useRef<HTMLParagraphElement>(null);
   const confirming = useRef(false);
+  const latest = useRef({ onCancel, pending });
+  const wasPending = useRef(false);
   const titleId = useId();
   const descriptionId = useId();
+
+  useEffect(() => {
+    latest.current = { onCancel, pending };
+  }, [onCancel, pending]);
 
   useEffect(() => {
     if (!open) return;
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !pending) onCancel();
+      if (event.key === 'Escape' && !latest.current.pending) latest.current.onCancel();
     };
     document.addEventListener('keydown', onKeyDown);
     continueButton.current?.focus();
@@ -26,7 +34,15 @@ export function EndInterviewDialog({ open, pending, error, onCancel, onConfirm }
       document.removeEventListener('keydown', onKeyDown);
       trigger?.focus();
     };
-  }, [onCancel, open, pending]);
+  }, [open]);
+
+  useEffect(() => {
+    const pendingBegan = open && pending && !wasPending.current;
+    wasPending.current = pending;
+    if (pendingBegan && (document.activeElement === continueButton.current || document.activeElement === confirmButton.current)) {
+      status.current?.focus();
+    }
+  }, [open, pending]);
 
   useEffect(() => {
     if (!pending) confirming.current = false;
@@ -44,9 +60,9 @@ export function EndInterviewDialog({ open, pending, error, onCancel, onConfirm }
     <div className="end-confirm" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId}>
       <strong id={titleId}>确定结束这场面试？</strong>
       <span id={descriptionId}>已完成内容会保存并生成总结。</span>
-      {error && <p role="alert">{error}</p>}
+      <p ref={status} role={error ? 'alert' : 'status'} tabIndex={-1}>{error ?? (pending ? '正在保存…' : null)}</p>
       <button ref={continueButton} type="button" autoFocus disabled={pending} onClick={onCancel}>继续面试</button>
-      <button className="danger-button" type="button" disabled={pending} onClick={confirm}>{pending ? '正在保存…' : error ? '重试结束' : '确认结束并查看总结'}</button>
+      <button ref={confirmButton} className="danger-button" type="button" disabled={pending} onClick={confirm}>{pending ? '正在保存…' : error ? '重试结束' : '确认结束并查看总结'}</button>
     </div>
   </div>;
 }

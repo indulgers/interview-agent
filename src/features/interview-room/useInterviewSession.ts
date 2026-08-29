@@ -16,20 +16,65 @@ const browserScheduler = {
   },
 };
 
+function createEndTestControl() {
+  let failNext = false;
+  let gate: { promise: Promise<void>; release(): void } | null = null;
+  return {
+    beforeFinish: async () => {
+      if (failNext) {
+        failNext = false;
+        throw new Error('test end failure');
+      }
+      await gate?.promise;
+    },
+    deferNextEnd: () => {
+      if (gate) {
+        gate.release();
+        gate = null;
+        return;
+      }
+      let release!: () => void;
+      const promise = new Promise<void>((resolve) => { release = resolve; });
+      gate = { promise, release };
+    },
+    failNextEnd: () => { failNext = true; },
+  };
+}
+
 export function useInterviewSession(snapshot: ContentSnapshot, mediaStream: MediaStream | null, testMode = false) {
-  const session = useMemo(() => createInterviewSession({
-    snapshot,
-    history: createBrowserInterviewHistory(),
-    voice: createRuntimeVoice(mediaStream ?? undefined, testMode),
-    clock: browserClock,
-    scheduler: browserScheduler,
-  }), [snapshot, mediaStream, testMode]);
+  const { session, endTestControl } = useMemo(() => {
+    const history = createBrowserInterviewHistory();
+    const control = testMode ? createEndTestControl() : null;
+    return {
+      session: createInterviewSession({
+        snapshot,
+        history: control ? { ...history, finish: async (...input) => { await control.beforeFinish(); await history.finish(...input); } } : history,
+        voice: createRuntimeVoice(mediaStream ?? undefined, testMode),
+        clock: browserClock,
+        scheduler: browserScheduler,
+      }),
+      endTestControl: control,
+    };
+  }, [snapshot, mediaStream, testMode]);
   const [view, setView] = useState<InterviewSessionView>(() => session.view());
   const refresh = useCallback(() => setView(session.view()), [session]);
   useEffect(() => {
     const id = window.setInterval(refresh, 200);
     return () => { window.clearInterval(id); void session.end(); };
   }, [refresh, session]);
+  useEffect(() => {
+    if (!testMode || !endTestControl) return;
+    const target = window as Window & { __interviewE2E?: Record<string, unknown> };
+    const previous = target.__interviewE2E;
+    const controls = {
+      ...previous,
+      deferNextEnd: endTestControl.deferNextEnd,
+      failNextEnd: endTestControl.failNextEnd,
+      finishNaturally: () => session.end(),
+    };
+    target.__interviewE2E = controls;
+    return () => { if (target.__interviewE2E === controls) target.__interviewE2E = previous; };
+  }, [endTestControl, session, testMode]);
   return {
     view,
     start: async () => {
