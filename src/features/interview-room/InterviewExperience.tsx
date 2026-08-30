@@ -11,6 +11,14 @@ export function historySummaryPath(sessionId: string) {
   return `/history/${encodeURIComponent(sessionId)}`;
 }
 
+export function shouldNavigateToSummary(
+  result: string | null,
+  sessionId: string | null,
+  endDialogOpen: boolean,
+) {
+  return Boolean(result && sessionId && !endDialogOpen);
+}
+
 export function InterviewExperience({ snapshot, testMode = false }: { snapshot: ContentSnapshot; testMode?: boolean }) {
   const router = useRouter();
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>('idle');
@@ -25,9 +33,9 @@ export function InterviewExperience({ snapshot, testMode = false }: { snapshot: 
   const session = useInterviewSession(snapshot, stream, testMode);
   useEffect(() => () => stream?.getTracks().forEach((track) => track.stop()), [stream]);
   useEffect(() => {
-    if (!session.view.result || !session.view.sessionId) return;
+    if (!shouldNavigateToSummary(session.view.result, session.view.sessionId, endDialogOpen) || !session.view.sessionId) return;
     router.replace(historySummaryPath(session.view.sessionId));
-  }, [router, session.view.result, session.view.sessionId]);
+  }, [endDialogOpen, router, session.view.result, session.view.sessionId]);
   const requestDevices = async () => {
     setDeviceStatus('checking');
     try {

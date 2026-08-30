@@ -39,6 +39,7 @@ describe('interview room', () => {
       microphoneOn cameraOn
       answerSubmission="idle"
       canSubmitAnswer
+      endDisabled={false}
       onToggleMicrophone={vi.fn()} onToggleCamera={vi.fn()}
       onEndAnswer={vi.fn()} onRequestEnd={vi.fn()}
     />);
@@ -50,6 +51,7 @@ describe('interview room', () => {
   it('disables and announces the answer action while submission is in flight', () => {
     const html = renderToStaticMarkup(<Controls
       microphoneOn cameraOn answerSubmission="submitting" canSubmitAnswer
+      endDisabled={false}
       onToggleMicrophone={vi.fn()} onToggleCamera={vi.fn()}
       onEndAnswer={vi.fn()} onRequestEnd={vi.fn()}
     />);
@@ -62,12 +64,51 @@ describe('interview room', () => {
   it('offers an enabled retry after answer submission fails', () => {
     const html = renderToStaticMarkup(<Controls
       microphoneOn cameraOn answerSubmission="failed" canSubmitAnswer
+      endDisabled={false}
       onToggleMicrophone={vi.fn()} onToggleCamera={vi.fn()}
       onEndAnswer={vi.fn()} onRequestEnd={vi.fn()}
     />);
 
     expect(html).toContain('重新提交回答');
     expect(html).not.toContain('disabled');
+  });
+
+  it('disables and guards the end action while ending or terminal', () => {
+    const onRequestEnd = vi.fn();
+    const controls = Controls({
+      microphoneOn: true,
+      cameraOn: true,
+      answerSubmission: 'idle',
+      canSubmitAnswer: true,
+      endDisabled: true,
+      onToggleMicrophone: vi.fn(),
+      onToggleCamera: vi.fn(),
+      onEndAnswer: vi.fn(),
+      onRequestEnd,
+    }) as ReactElement<{ children: ReactNode }>;
+    const end = Children.toArray(controls.props.children).find((child) => (
+      isValidElement<{ className?: string }>(child) && child.props.className === 'end-button'
+    ));
+    if (!isValidElement<{ disabled?: boolean; onClick(event: { currentTarget: HTMLButtonElement }): void }>(end)) throw new Error('end control missing');
+
+    expect(end.props.disabled).toBe(true);
+    end.props.onClick({ currentTarget: {} as HTMLButtonElement });
+    expect(onRequestEnd).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { state: 'listening', ending: true, label: 'ending' },
+    { state: 'closing', ending: false, label: 'closing' },
+    { state: 'finished', ending: false, label: 'finished' },
+  ] as const)('keeps the end trigger disabled while $label', ({ state, ending }) => {
+    const html = renderToStaticMarkup(<InterviewRoom
+      state={state} elapsedMs={0} currentQuestion={null} error={null} candidateStream={null}
+      answerSubmission="idle"
+      endDialogOpen={false} ending={ending} endError={null}
+      onEndAnswer={vi.fn()} onRetry={vi.fn()} onRequestEnd={vi.fn()} onCancelEnd={vi.fn()} onEndInterview={vi.fn()}
+    />);
+
+    expect(html).toMatch(/class="end-button"[^>]*disabled[^>]*>结束面试<\/button>/);
   });
 
   it.each(['thinking', 'speaking', 'reconnecting', 'paused', 'closing'] as const)('disables answer submission without retry semantics while %s', (state) => {
@@ -90,6 +131,7 @@ describe('interview room', () => {
       cameraOn: true,
       answerSubmission: 'failed',
       canSubmitAnswer: false,
+      endDisabled: false,
       onToggleMicrophone: vi.fn(),
       onToggleCamera: vi.fn(),
       onEndAnswer,

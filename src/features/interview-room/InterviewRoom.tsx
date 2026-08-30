@@ -38,13 +38,19 @@ export function InterviewRoom({ state, elapsedMs, currentQuestion, error, answer
   const [endTrigger, setEndTrigger] = useState<HTMLButtonElement | null>(null);
   const [microphoneOn, setMicrophoneOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
+  const endDisabled = ending || state === 'closing' || state === 'finished';
+  const requestEnd = (trigger?: HTMLButtonElement) => {
+    if (endDisabled) return;
+    if (trigger) setEndTrigger(trigger);
+    onRequestEnd();
+  };
   useEffect(() => { if (video.current) video.current.srcObject = candidateStream; }, [candidateStream]);
   const toggle = (kind: 'audio' | 'video', active: boolean) => {
     candidateStream?.getTracks().filter((track) => track.kind === kind).forEach((track) => { track.enabled = !active; });
   };
   return <main className="interview-shell interview-room">
     <header className="room-header app-nav">
-      <AppNavigation active="interview" compact onAttemptLeave={onRequestEnd} />
+      <AppNavigation active="interview" compact onAttemptLeave={() => requestEnd()} />
       <div className="room-clock"><time>{formatTime(elapsedMs)} <small>/ 45:00</small></time><span className="recording-dot">进行中</span></div>
     </header>
     <section className="room-layout">
@@ -59,10 +65,10 @@ export function InterviewRoom({ state, elapsedMs, currentQuestion, error, answer
         <section className="room-info-card room-info-card--status"><p>当前状态</p><strong>{stateCopy[state]}</strong><span>{microphoneOn ? '麦克风已开启' : '麦克风已关闭'}</span></section>
       </aside>
     </section>
-    <Controls microphoneOn={microphoneOn} cameraOn={cameraOn} answerSubmission={answerSubmission} canSubmitAnswer={state === 'listening'}
+    <Controls microphoneOn={microphoneOn} cameraOn={cameraOn} answerSubmission={answerSubmission} canSubmitAnswer={state === 'listening'} endDisabled={endDisabled}
       onToggleMicrophone={() => { toggle('audio', microphoneOn); setMicrophoneOn(!microphoneOn); }}
       onToggleCamera={() => { toggle('video', cameraOn); setCameraOn(!cameraOn); }}
-      onEndAnswer={onEndAnswer} onRequestEnd={(trigger) => { setEndTrigger(trigger); onRequestEnd(); }} />
+      onEndAnswer={onEndAnswer} onRequestEnd={requestEnd} />
     <EndInterviewDialog open={endDialogOpen} pending={ending} error={endError} restoreFocusTarget={endTrigger} onCancel={onCancelEnd} onConfirm={onEndInterview} />
   </main>;
 }

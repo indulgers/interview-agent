@@ -12,6 +12,7 @@ type Task4Control = {
   submitAnswerCount(): number;
   failNextCancel(): void;
   deferNextEnd(): void;
+  endCallCount(): number;
 };
 
 function control(page: Page) {
@@ -205,13 +206,14 @@ test.describe('Task 4 behavior', () => {
     await expectBlocked('面试已暂停');
   });
 
-  test('closes the successful end dialog while deferred navigation is still pending', async ({ page }) => {
+  test('closes before requesting a slow terminal route and cannot reopen or end twice', async ({ page }) => {
     await start(page);
     let releaseNavigation!: () => void;
     let navigationRequested!: () => void;
     const navigationGate = new Promise<void>((resolve) => { releaseNavigation = resolve; });
     const requestObserved = new Promise<void>((resolve) => { navigationRequested = resolve; });
     await page.route('**/history/**', async (route) => {
+      expect(await page.getByRole('dialog').count()).toBe(0);
       navigationRequested();
       await navigationGate;
       await route.continue();
@@ -225,6 +227,13 @@ test.describe('Task 4 behavior', () => {
     await page.evaluate(() => (window as unknown as { __interviewE2E: Task4Control }).__interviewE2E.deferNextEnd());
     await requestObserved;
     await expect(page.getByRole('dialog')).toHaveCount(0);
+    const endButton = page.getByRole('button', { name: '结束面试' });
+    await expect(endButton).toBeDisabled();
+    await endButton.evaluate((button: HTMLButtonElement) => button.click());
+    await endButton.evaluate((button: HTMLButtonElement) => button.focus());
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(await page.evaluate(() => (window as unknown as { __interviewE2E: Task4Control }).__interviewE2E.endCallCount())).toBe(1);
     releaseNavigation();
     await expect(page).toHaveURL(/\/history\/[\w-]+$/);
   });
