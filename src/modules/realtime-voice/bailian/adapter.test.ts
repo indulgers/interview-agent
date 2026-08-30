@@ -334,7 +334,14 @@ describe('BailianRealtimeVoice', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(track.enabled).toBe(true);
     expect(peer.replacedTrack).toBeNull();
-    expect(peer.outbound.sent.slice(-2).map((value) => JSON.parse(value).type)).toEqual([
+    expect(peer.outbound.sent.map((value) => JSON.parse(value).type)).toEqual([
+      'session.update',
+      'input_audio_buffer.commit',
+    ]);
+    peer.inbound.emit(JSON.stringify({ type: 'input_audio_buffer.committed', item_id: 'candidate-1' }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(peer.outbound.sent.map((value) => JSON.parse(value).type)).toEqual([
+      'session.update',
       'input_audio_buffer.commit',
       'response.create',
     ]);
@@ -360,7 +367,14 @@ describe('BailianRealtimeVoice', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(track.enabled).toBe(true);
     expect(peer.replacedTrack).toBeNull();
-    expect(peer.outbound.sent.slice(-2).map((value) => JSON.parse(value).type)).toEqual([
+    expect(peer.outbound.sent.map((value) => JSON.parse(value).type)).toEqual([
+      'session.update',
+      'input_audio_buffer.commit',
+    ]);
+    peer.inbound.emit(JSON.stringify({ type: 'input_audio_buffer.committed', item_id: 'candidate-1' }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(peer.outbound.sent.map((value) => JSON.parse(value).type)).toEqual([
+      'session.update',
       'input_audio_buffer.commit',
       'response.create',
     ]);
@@ -385,6 +399,7 @@ describe('BailianRealtimeVoice', () => {
     await connection.submitAnswer();
     expect(track.enabled).toBe(true);
     expect(peer.replacedTrack).toBeNull();
+    peer.inbound.emit(JSON.stringify({ type: 'input_audio_buffer.committed', item_id: 'candidate-1' }));
     peer.inbound.emit(JSON.stringify({ type: 'response.created', response: { id: 'response-1', status: 'in_progress' } }));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -449,6 +464,7 @@ describe('BailianRealtimeVoice', () => {
     const seen: string[] = [];
     connection.subscribe((event) => { if (event.type === 'connection') seen.push(event.state); });
     await connection.submitAnswer();
+    peer.inbound.emit(JSON.stringify({ type: 'input_audio_buffer.committed', item_id: 'candidate-1' }));
     await new Promise((resolve) => setTimeout(resolve, 0));
     peer.outbound.sendError = new Error('cancel failed');
 

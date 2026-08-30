@@ -203,6 +203,7 @@ class BailianRealtimeConnection implements RealtimeConnection {
   private unavailable = false;
   private resourcesReleased = false;
   private answerSubmissionPromise: Promise<void> | undefined;
+  private awaitingCommittedAudio = false;
   private awaitingResponse = false;
   private responseCancellationSent = false;
   private outboundAudioAttached = false;
@@ -300,8 +301,7 @@ class BailianRealtimeConnection implements RealtimeConnection {
     try {
       await this.detachOutboundAudio();
       this.send({ event_id: eventId(this.dependencies.now()), type: 'input_audio_buffer.commit' });
-      this.send({ event_id: eventId(this.dependencies.now()), type: 'response.create' });
-      this.awaitingResponse = true;
+      this.awaitingCommittedAudio = true;
       this.responseCancellationSent = false;
     } catch (cause) {
       await this.restoreOutboundAudioAfterFailure();
@@ -370,6 +370,13 @@ class BailianRealtimeConnection implements RealtimeConnection {
     let payload: unknown;
     try { payload = JSON.parse(text); } catch { this.diagnostic('malformed-txt-event'); return; }
     if (isObject(payload) && payload.type === 'session.created') { this.sessionCreated = true; if (this.inbound) this.readyResolve(); }
+    if (isObject(payload) && payload.type === 'input_audio_buffer.committed' && this.awaitingCommittedAudio) {
+      this.awaitingCommittedAudio = false;
+      this.send({ event_id: eventId(this.dependencies.now()), type: 'response.create' });
+      this.awaitingResponse = true;
+      this.responseCancellationSent = false;
+      return;
+    }
     if (isObject(payload) && (payload.type === 'response.done' || payload.type === 'error')) {
       this.awaitingResponse = false;
       let restoreFailure: unknown;
