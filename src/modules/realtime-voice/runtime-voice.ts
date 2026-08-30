@@ -27,6 +27,7 @@ export function createRuntimeVoice(mediaStream?: MediaStream, serverConfirmedTes
       connectAttemptCount: () => active().connectInputs.length,
       connectionCount: () => active().connections.length,
       cancelCount: () => active().connections.reduce((total, connection) => total + connection.cancelAssistantSpeechCount, 0),
+      cancelAssistantSpeechCount: () => active().connections.reduce((total, connection) => total + connection.cancelAssistantSpeechCount, 0),
       failNextCancel: () => active().connections.at(-1)?.rejectCancel(new Error('test cancel failure')),
       deferNextSubmit: () => {
         let resolve!: () => void;
@@ -36,6 +37,7 @@ export function createRuntimeVoice(mediaStream?: MediaStream, serverConfirmedTes
       },
       rejectNextSubmit: () => { pendingSubmit?.reject(new Error('test answer submission failure')); pendingSubmit = null; },
       submitAnswerCount: () => active().connections.reduce((total, connection) => total + connection.submitAnswerCount, 0),
+      responseCreateCount: () => active().connections.reduce((total, connection) => total + connection.responseCreateCount, 0),
     };
   }
   return selected;

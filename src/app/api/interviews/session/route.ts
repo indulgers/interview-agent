@@ -8,7 +8,7 @@ const RequestBody = z.object({ operation: z.string().min(1), input: z.unknown() 
 export async function POST(request: Request) {
   try {
     const { operation, input } = RequestBody.parse(await request.json());
-    const history = getServerInterviewHistory();
+    const history = await getServerInterviewHistory();
     const data = input as never;
     switch (operation) {
       case 'start': return NextResponse.json(await history.start(data));

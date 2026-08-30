@@ -7,8 +7,8 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   if (!isSameOriginJsonMutation(_request)) return Response.json({ error: '请求来源无效' }, { status: 403 });
   const { id } = await context.params;
   return handleFeedbackGeneration(id, {
-    generate: (sessionId) => generateInterviewFeedback(sessionId, {
-      history: getServerInterviewHistory(),
+    generate: async (sessionId) => generateInterviewFeedback(sessionId, {
+      history: await getServerInterviewHistory(),
       model: createRuntimeFeedbackModel(process.env.INTERVIEW_COMPILED_TEST_MODE === '1' ? 'test' : process.env.NODE_ENV),
       now: () => Date.now(),
     }),

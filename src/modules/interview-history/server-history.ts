@@ -4,13 +4,17 @@ import { createDatabase, migrateDatabase } from '../../db/client';
 import { readServerEnv } from '../../lib/env';
 import { createInterviewHistory } from './history';
 
-const globalHistory = globalThis as typeof globalThis & { __interviewHistory?: ReturnType<typeof createInterviewHistory> };
+const globalHistory = globalThis as typeof globalThis & { __interviewHistory?: Promise<ReturnType<typeof createInterviewHistory>> };
+
+export async function createServerInterviewHistory(databaseUrl: string) {
+  const handle = createDatabase(databaseUrl);
+  migrateDatabase(handle);
+  const history = createInterviewHistory(handle.db);
+  await history.recoverAbandoned();
+  return history;
+}
 
 export function getServerInterviewHistory() {
-  if (!globalHistory.__interviewHistory) {
-    const handle = createDatabase(readServerEnv().DATABASE_URL);
-    migrateDatabase(handle);
-    globalHistory.__interviewHistory = createInterviewHistory(handle.db);
-  }
+  globalHistory.__interviewHistory ??= createServerInterviewHistory(readServerEnv().DATABASE_URL);
   return globalHistory.__interviewHistory;
 }

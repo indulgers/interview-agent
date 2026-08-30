@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import { createDatabase, closeDatabase, migrateDatabase } from '../../db/client';
 import { createInterviewHistory } from './history';
+import { createServerInterviewHistory } from './server-history';
 import type { ContentSnapshot } from '../interview-content/types';
 
 const databases: Array<{ handle: ReturnType<typeof createDatabase>; directory: string }> = [];
@@ -130,6 +131,20 @@ describe('InterviewHistory', () => {
     expect(await history.recoverAbandoned()).toBe(1);
     expect((await history.detail(abandoned))?.session.result).toBe('interrupted');
     expect(await history.recoverAbandoned()).toBe(0);
+  });
+
+  it('recovers abandoned sessions before exposing server history', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'interview-history-server-'));
+    const databasePath = path.join(directory, 'history.sqlite');
+    const database = createDatabase(databasePath);
+    migrateDatabase(database);
+    const abandoned = await createInterviewHistory(database.db).start({ snapshot, startedAt: 1, targetDurationMs: 2_700_000 });
+    closeDatabase(database);
+
+    const history = await createServerInterviewHistory(databasePath);
+    expect((await history.detail(abandoned))?.session.result).toBe('interrupted');
+
+    fs.rmSync(directory, { recursive: true, force: true });
   });
 
   it('stores feedback retry state independently from the session result', async () => {

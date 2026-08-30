@@ -2,6 +2,11 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 
 type TestEvent = Record<string, unknown> & { type: string };
 type EndControl = { deferNextEnd(): void; failNextEnd(): void; finishNaturally(): Promise<void>; endCallCount(): number };
+type VoiceControl = {
+  submitAnswerCount(): number;
+  responseCreateCount(): number;
+  cancelAssistantSpeechCount(): number;
+};
 async function emit(page: Page, event: TestEvent) {
   await page.evaluate(async (value) => {
     const control = (window as unknown as { __interviewE2E?: { emit(event: TestEvent): Promise<void> } }).__interviewE2E;
@@ -82,6 +87,65 @@ test.describe.serial('interview MVP', () => {
     await start(page);
     await page.evaluate(() => (window as unknown as { __interviewE2E: EndControl }).__interviewE2E.finishNaturally());
     await expect(page).toHaveURL(/\/history\/[\w-]+$/);
+  });
+
+  test('manual answer and early summary completes the redesigned journey', async ({ page }) => {
+    const feedbackPattern = /\/api\/interviews\/[^/]+\/feedback$/;
+    let releaseFeedback!: () => void;
+    const feedbackGate = new Promise<void>((resolve) => { releaseFeedback = resolve; });
+    await page.route(feedbackPattern, async (route) => {
+      await feedbackGate;
+      await route.continue();
+    });
+
+    await start(page);
+    await emit(page, { type: 'candidate_speech', state: 'started', at: Date.now() });
+    await emit(page, { type: 'candidate_speech', state: 'stopped', at: Date.now() });
+    await page.waitForTimeout(2_000);
+    expect(await page.evaluate(() => (window as unknown as { __interviewE2E: VoiceControl }).__interviewE2E.responseCreateCount())).toBe(0);
+    await expect(page.locator('.state-overlay > span')).toHaveText('请开始回答');
+
+    await emit(page, { type: 'final_turn', providerTurnId: 'candidate-manual-1', speaker: 'candidate', text: '我负责 Node.js 接口边界、背压处理和 Agent 上下文管理。', startedAt: Date.now(), endedAt: Date.now() + 1 });
+    await page.getByRole('button', { name: '回答完成', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => {
+      const voice = (window as unknown as { __interviewE2E: VoiceControl }).__interviewE2E;
+      return [voice.submitAnswerCount(), voice.responseCreateCount()];
+    })).toEqual([1, 1]);
+
+    await emit(page, { type: 'assistant_speech', state: 'started', at: Date.now() });
+    await expect(page.locator('.state-overlay > span')).toHaveText('面试官正在提问');
+    await emit(page, { type: 'candidate_speech', state: 'started', at: Date.now() });
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __interviewE2E: VoiceControl }).__interviewE2E.cancelAssistantSpeechCount())).toBe(1);
+
+    const earlyEnd = page.getByRole('button', { name: '提前结束', exact: true });
+    await earlyEnd.click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.getByRole('button', { name: '继续面试' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await earlyEnd.click();
+    await page.getByRole('button', { name: '确认结束并查看总结' }).click();
+    await expect(page).toHaveURL(/\/history\/([\w-]+)$/);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.locator('.interview-room')).toHaveCount(0);
+
+    const sessionId = new URL(page.url()).pathname.split('/').at(-1)!;
+    await expect(page.getByText(/\u5df2保存 .*1 \u8f6e回答/)).toBeVisible();
+    await expect(page.getByRole('heading', { name: '正在分析本场回答' })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: '会后操作' })).toBeVisible();
+
+    releaseFeedback();
+    await expect(page.getByRole('heading', { name: '六维反馈' })).toBeVisible({ timeout: 8_000 });
+    await expect(page.locator('.dimension-grid article')).toHaveCount(6);
+    const summaryActions = page.getByRole('navigation', { name: '会后操作' });
+    await expect(summaryActions.getByRole('link', { name: '返回首页' })).toHaveAttribute('href', '/');
+    await expect(summaryActions.getByRole('link', { name: '查看面试记录' })).toHaveAttribute('href', '/history');
+    await expect(summaryActions.getByRole('link', { name: '再练一场' })).toHaveAttribute('href', '/interview');
+
+    await summaryActions.getByRole('link', { name: '查看面试记录' }).click();
+    await expect(page).toHaveURL(/\/history$/);
+    await page.getByRole('link', { name: new RegExp(sessionId) }).click();
+    await expect(page).toHaveURL(new RegExp(`/history/${sessionId}$`));
+    await expect(page.getByRole('heading', { name: '六维反馈' })).toBeVisible();
   });
 
   test('device ready → turns → barge-in → finish → feedback retry → history → delete', async ({ page }) => {

@@ -9,6 +9,7 @@ import type {
 export class MemoryRealtimeConnection implements RealtimeConnection {
   readonly injectedProgress: InterviewProgress[] = [];
   cancelAssistantSpeechCount = 0;
+  responseCreateCount = 0;
   submitAnswerCount = 0;
   closed = false;
 
@@ -51,18 +52,19 @@ export class MemoryRealtimeConnection implements RealtimeConnection {
     this.submitGate = gate;
   }
 
-  submitAnswer() {
+  async submitAnswer() {
     this.submitAnswerCount++;
-    if (this.closed) return Promise.reject(new Error('实时语音连接已断开。'));
+    if (this.closed) throw new Error('实时语音连接已断开。');
     const failure = this.submitFailure;
     this.submitFailure = null;
-    if (failure) return Promise.reject(failure);
+    if (failure) throw failure;
     const gate = this.submitGate ?? Promise.resolve();
     this.submitGate = null;
-    return Promise.race([
+    await Promise.race([
       gate,
       this.closeSignal.then(() => { throw new Error('实时语音连接已断开。'); }),
     ]);
+    this.responseCreateCount++;
   }
 
   async cancelAssistantSpeech() {
