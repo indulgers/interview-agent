@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ContentSnapshot } from '../../modules/interview-content/types';
 import { DeviceCheck, inspectMediaStream, type DeviceStatus } from './DeviceCheck';
@@ -17,6 +17,8 @@ export function InterviewExperience({ snapshot, testMode = false }: { snapshot: 
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [started, setStarted] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+  const startingRef = useRef(false);
   const [endDialogOpen, setEndDialogOpen] = useState(false);
   const [ending, setEnding] = useState(false);
   const [endError, setEndError] = useState<string | null>(null);
@@ -24,7 +26,6 @@ export function InterviewExperience({ snapshot, testMode = false }: { snapshot: 
   useEffect(() => () => stream?.getTracks().forEach((track) => track.stop()), [stream]);
   useEffect(() => {
     if (!session.view.result || !session.view.sessionId) return;
-    setEndDialogOpen(false);
     router.replace(historySummaryPath(session.view.sessionId));
   }, [router, session.view.result, session.view.sessionId]);
   const requestDevices = async () => {
@@ -37,13 +38,19 @@ export function InterviewExperience({ snapshot, testMode = false }: { snapshot: 
       setDeviceStatus(error instanceof DOMException && error.name === 'NotFoundError' ? 'missing' : 'denied');
     }
   };
-  if (!started) return <DeviceCheck status={deviceStatus} error={startError} onRequest={() => { setStartError(null); void requestDevices(); }} onStart={() => {
+  if (!started) return <DeviceCheck status={deviceStatus} stream={stream} starting={starting} error={startError} onRequest={() => { setStartError(null); void requestDevices(); }} onStart={() => {
+    if (startingRef.current) return;
+    startingRef.current = true;
+    setStarting(true);
     setStartError(null);
-    void session.start().then(() => setStarted(true)).catch(() => setStartError('面试官连接失败，请检查网络后重试。'));
+    void session.start()
+      .then(() => setStarted(true))
+      .catch(() => setStartError('面试官连接失败，请检查网络后重试。'))
+      .finally(() => { startingRef.current = false; setStarting(false); });
   }} />;
-  return <InterviewRoom state={session.view.state} elapsedMs={session.view.activeDurationMs} currentQuestion={session.view.currentQuestion} error={session.view.error} candidateStream={stream}
+  return <InterviewRoom state={session.view.state} elapsedMs={session.view.activeDurationMs} currentQuestion={session.view.currentQuestion} error={session.view.error} answerSubmission={session.view.answerSubmission} candidateStream={stream}
     endDialogOpen={endDialogOpen} ending={ending} endError={endError}
-    onEndAnswer={() => { void session.endAnswer(); }}
+    onEndAnswer={() => { void session.endAnswer().catch(() => undefined); }}
     onRetry={() => { void session.retry(); }}
     onRequestEnd={() => { setEndError(null); setEndDialogOpen(true); }}
     onCancelEnd={() => { setEndError(null); setEndDialogOpen(false); }}

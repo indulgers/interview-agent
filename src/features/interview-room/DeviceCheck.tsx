@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
+
 export type DeviceStatus = 'idle' | 'checking' | 'denied' | 'missing' | 'silent' | 'frozen' | 'ready';
 
 export function classifyDeviceReadiness(input: {
@@ -56,13 +58,25 @@ const messages: Record<DeviceStatus, string> = {
   ready: '设备已就绪。坐直、看向镜头，然后开始。',
 };
 
-export function DeviceCheck({ status, error, onRequest, onStart }: {
+export function bindPreviewStream(video: HTMLVideoElement, stream: MediaStream) {
+  video.srcObject = stream;
+  return () => { if (video.srcObject === stream) video.srcObject = null; };
+}
+
+export function DeviceCheck({ status, stream, starting, error, onRequest, onStart }: {
   status: DeviceStatus;
+  stream: MediaStream | null;
+  starting: boolean;
   error?: string | null;
   onRequest(): void;
   onStart(): void;
 }) {
   const ready = status === 'ready';
+  const video = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    if (!video.current || !stream) return;
+    return bindPreviewStream(video.current, stream);
+  }, [stream]);
   return (
     <main className="device-shell">
       <div className="device-layout">
@@ -77,12 +91,16 @@ export function DeviceCheck({ status, error, onRequest, onStart }: {
           </ol>
         </section>
         <section className="device-card" aria-label="设备检查">
-          <div className="device-preview" aria-hidden="true"><span>摄像头预览</span><i /></div>
+          <div className={`device-preview${stream ? ' device-preview--live' : ''}`}>
+            {stream
+              ? <video ref={video} autoPlay muted playsInline aria-label="本机摄像头画面" />
+              : <span>设备就绪后显示本机画面</span>}
+          </div>
           <p className={`device-status device-status--${status}`}><span aria-hidden="true" />{messages[status]}</p>
           {error && <p className="device-error" role="alert">{error}</p>}
           <div className="device-grid" aria-label="设备要求"><span>麦克风有声音</span><span>摄像头有画面</span><span>安静的空间</span></div>
           <p className="privacy-note">本机预览，不会上传或保存音视频</p>
-          <div className="device-actions">{!ready && <button className="secondary-button" type="button" onClick={onRequest} disabled={status === 'checking'}>{status === 'checking' ? '正在检查…' : '检查设备'}</button>}<button className="start-interview" type="button" onClick={onStart} disabled={!ready}>开始 45 分钟面试</button></div>
+          <div className="device-actions">{!ready && <button className="secondary-button" type="button" onClick={onRequest} disabled={status === 'checking'}>{status === 'checking' ? '正在检查…' : '检查设备'}</button>}<button className="start-interview" type="button" onClick={onStart} disabled={!ready || starting} aria-busy={starting}>{starting ? '正在连接…' : '开始 45 分钟面试'}</button></div>
         </section>
       </div>
     </main>

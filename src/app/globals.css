@@ -71,6 +71,8 @@ h1, h2, h3 { letter-spacing: -.035em; }
 .device-preview::before { top: 27%; width: 4.5rem; height: 4.5rem; }
 .device-preview::after { top: 50%; width: 10rem; height: 8rem; border-radius: 6rem 6rem 1rem 1rem; }
 .device-preview span { position: absolute; left: 1rem; bottom: 1rem; z-index: 1; border-radius: 999px; padding: .42rem .68rem; background: rgb(255 255 255 / 82%); font-size: .75rem; font-weight: 700; }
+.device-preview--live::before, .device-preview--live::after { display: none; }
+.device-preview video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 .device-status { display: flex; align-items: flex-start; gap: .65rem; margin: 1.1rem 0 .8rem; color: var(--muted); line-height: 1.55; }
 .device-status > span { width: .65rem; height: .65rem; flex: none; margin-top: .42rem; border-radius: 50%; background: #aeb9b5; box-shadow: 0 0 0 .3rem rgb(174 185 181 / 17%); }
 .device-status--ready > span { background: var(--sage); box-shadow: 0 0 0 .3rem rgb(108 162 143 / 17%); }
@@ -97,8 +99,14 @@ h1, h2, h3 { letter-spacing: -.035em; }
 .interviewer-frame { position: relative; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 24px; background: #dfe8e5; box-shadow: 0 12px 36px rgb(24 32 42 / 8%); }
 .interviewer-portrait { position: relative; width: 100%; height: 100%; min-height: 24rem; margin: 0; overflow: hidden; background: #dfe8e5; }
 .interviewer-portrait__media { position: absolute; inset: -1%; animation: portrait-idle 8s ease-in-out infinite alternate; }
-.interviewer-portrait__layer { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 1; animation: portrait-in 200ms ease both; }
-.interviewer-portrait__layer--speaking { animation: portrait-speak 1.8s ease-in-out infinite alternate; }
+.interviewer-portrait__layer { position: absolute; inset: 0; opacity: 1; }
+.interviewer-portrait__layer--pending { z-index: -1; opacity: 0; pointer-events: none; }
+.interviewer-portrait__layer--previous { z-index: 0; }
+.interviewer-portrait__layer--current { z-index: 1; }
+.interviewer-portrait__layer--entering { animation: portrait-crossfade-in 200ms ease both; }
+.interviewer-portrait__layer--leaving { animation: portrait-crossfade-out 200ms ease both; }
+.interviewer-portrait__image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.interviewer-portrait__image--speaking-base { animation: portrait-speak-base 1.8s ease-in-out infinite alternate; }
 .interviewer-portrait__placeholder { position: absolute; inset: 0; background: linear-gradient(145deg, #dce9e5, #f4f7f7); }
 .interviewer-portrait figcaption { position: absolute; top: 1rem; left: 1rem; z-index: 2; display: grid; gap: .12rem; border-radius: 13px; padding: .58rem .75rem; background: rgb(20 31 28 / 74%); color: white; backdrop-filter: blur(12px); }
 .interviewer-portrait figcaption strong { font-size: .86rem; }
@@ -192,7 +200,7 @@ h1, h2, h3 { letter-spacing: -.035em; }
 .dimension-grid p { margin: 0; line-height: 1.65; }
 .summary-observations { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; }
 .summary-observations ul, .summary-priorities { display: grid; gap: .65rem; margin: 0; padding: 0; list-style: none; }
-.summary-observations li, .summary-priorities li { display: grid; gap: .28rem; border-radius: 16px; padding: 1rem; background: var(--soft); }
+.summary-observations li, .summary-priorities li { display: grid; gap: .28rem; border-radius: 18px; padding: 1rem; background: var(--soft); }
 .summary-observations li > span, .summary-priorities span { color: var(--muted); font-size: .85rem; line-height: 1.55; }
 .summary-observations q { color: var(--text); font-size: .84rem; line-height: 1.6; }
 .summary-priorities { grid-template-columns: repeat(3, 1fr); }
@@ -204,7 +212,7 @@ h1, h2, h3 { letter-spacing: -.035em; }
 .detail-section { padding: 2.5rem 0; border-top: 1px solid var(--line); }
 .detail-section__heading h2 { margin-bottom: 1.5rem; font-size: 1.8rem; }
 .transcript-list { display: grid; gap: .8rem; margin: 0; padding: 0; list-style: none; }
-.transcript-turn { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: 1rem; border: 1px solid var(--line); border-radius: 16px; padding: 1rem 1.15rem; background: var(--surface); }
+.transcript-turn { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: 1rem; border: 1px solid var(--line); border-radius: 18px; padding: 1rem 1.15rem; background: var(--surface); }
 .transcript-turn--candidate { margin-left: clamp(0rem, 7vw, 5rem); background: #f9fbfa; }
 .transcript-turn > span, .transcript-turn > small { color: var(--muted); font-size: .73rem; }
 .transcript-turn > p { margin: 0; line-height: 1.75; }
@@ -217,9 +225,10 @@ h1, h2, h3 { letter-spacing: -.035em; }
 .delete-confirm .danger-button { background: var(--danger); color: white; }
 
 @keyframes content-in { from { opacity: 0; transform: translateY(8px); } }
-@keyframes portrait-in { from { opacity: 0; } }
+@keyframes portrait-crossfade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes portrait-crossfade-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes portrait-idle { to { transform: scale(1.008) translateY(-.25%); } }
-@keyframes portrait-speak { 0%, 35% { opacity: 0; } 62%, 100% { opacity: 1; } }
+@keyframes portrait-speak-base { 0%, 35% { opacity: 0; } 62%, 100% { opacity: 1; } }
 @keyframes overlay-in { from { opacity: 0; } }
 @keyframes dialog-in { from { opacity: 0; transform: translateY(8px) scale(.985); } }
 @keyframes summary-spin { to { transform: rotate(360deg); } }
@@ -290,5 +299,5 @@ h1, h2, h3 { letter-spacing: -.035em; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   .interviewer-portrait--motion-safe .interviewer-portrait__media { transform: none; }
-  .interviewer-portrait--motion-safe .interviewer-portrait__layer--speaking { opacity: 1; }
+  .interviewer-portrait--motion-safe .interviewer-portrait__image--speaking-base { display: none; }
 }

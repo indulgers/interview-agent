@@ -17,11 +17,24 @@ export function createRuntimeVoice(mediaStream?: MediaStream, serverConfirmedTes
   if (serverConfirmedTestMode && typeof window !== 'undefined') {
     testVoices.push(memory);
     const active = () => [...testVoices].reverse().find((voice) => voice.connections.length > 0) ?? testVoices.at(-1)!;
-    (window as Window & { __interviewE2E?: { emit(event: VoiceEvent): Promise<void>; failConnects(count: number): void; connectionCount(): number; cancelCount(): number } }).__interviewE2E = {
-      emit: (event) => active().emit(event),
-      failConnects: (count) => { for (let index = 0; index < count; index++) active().enqueueConnectFailure(new Error('test reconnect failure')); },
+    let pendingConnect: ReturnType<MemoryRealtimeVoice['deferNextConnect']> | null = null;
+    let pendingSubmit: { resolve(): void; reject(cause: Error): void } | null = null;
+    (window as Window & { __interviewE2E?: Record<string, unknown> }).__interviewE2E = {
+      emit: (event: VoiceEvent) => active().emit(event),
+      failConnects: (count: number) => { for (let index = 0; index < count; index++) active().enqueueConnectFailure(new Error('test reconnect failure')); },
+      deferNextConnect: () => { pendingConnect = active().deferNextConnect(); },
+      resolveNextConnect: () => { pendingConnect?.resolve(); pendingConnect = null; },
+      connectAttemptCount: () => active().connectInputs.length,
       connectionCount: () => active().connections.length,
       cancelCount: () => active().connections.reduce((total, connection) => total + connection.cancelAssistantSpeechCount, 0),
+      deferNextSubmit: () => {
+        let resolve!: () => void;
+        let reject!: (cause: Error) => void;
+        active().connections.at(-1)?.deferSubmit(new Promise<void>((accept, decline) => { resolve = accept; reject = decline; }));
+        pendingSubmit = { resolve, reject };
+      },
+      rejectNextSubmit: () => { pendingSubmit?.reject(new Error('test answer submission failure')); pendingSubmit = null; },
+      submitAnswerCount: () => active().connections.reduce((total, connection) => total + connection.submitAnswerCount, 0),
     };
   }
   return selected;

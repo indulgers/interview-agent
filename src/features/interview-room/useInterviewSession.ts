@@ -44,6 +44,16 @@ function createEndTestControl() {
   };
 }
 
+export async function submitAnswerAndRefresh(submit: () => Promise<void>, refresh: () => void) {
+  try {
+    const submission = submit();
+    refresh();
+    await submission;
+  } finally {
+    refresh();
+  }
+}
+
 export function useInterviewSession(snapshot: ContentSnapshot, mediaStream: MediaStream | null, testMode = false) {
   const { session, endTestControl } = useMemo(() => {
     const history = createBrowserInterviewHistory();
@@ -86,7 +96,7 @@ export function useInterviewSession(snapshot: ContentSnapshot, mediaStream: Medi
       await session.start({ microphone: true, camera: true }); refresh();
     },
     retry: async () => { await session.retry(); refresh(); },
-    endAnswer: async () => { await session.signalEndOfAnswer(); refresh(); },
+    endAnswer: async () => submitAnswerAndRefresh(() => session.signalEndOfAnswer(), refresh),
     end: async () => {
       endTestControl?.recordEndCall();
       if (!session.view().sessionId) throw new Error('面试会话尚未保存');

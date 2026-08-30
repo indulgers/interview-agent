@@ -167,11 +167,15 @@ describe('InterviewSession', () => {
     voice.connections[0]?.rejectSubmit(new Error('provider rejected submission'));
 
     await expect(session.signalEndOfAnswer()).rejects.toThrow('provider rejected submission');
-    expect(session.view()).toMatchObject({ state: 'listening', answerSubmission: 'failed' });
+    expect(session.view()).toMatchObject({
+      state: 'listening',
+      answerSubmission: 'failed',
+      error: '回答提交失败，请重试。',
+    });
 
     await session.signalEndOfAnswer();
     expect(voice.connections[0]?.submitAnswerCount).toBe(2);
-    expect(session.view()).toMatchObject({ state: 'thinking', answerSubmission: 'idle' });
+    expect(session.view()).toMatchObject({ state: 'thinking', answerSubmission: 'idle', error: null });
   });
 
   it('shares one answer submission across a double click', async () => {

@@ -11,6 +11,7 @@ describe('interview room', () => {
       elapsedMs={92_000}
       currentQuestion="请说说你在 Node.js 服务中如何处理背压。"
       error={null}
+      answerSubmission="idle"
       candidateStream={null}
       endDialogOpen={false}
       ending={false}
@@ -35,6 +36,7 @@ describe('interview room', () => {
   it('offers an end-interview trigger from the control bar', () => {
     const html = renderToStaticMarkup(<Controls
       microphoneOn cameraOn
+      answerSubmission="idle"
       onToggleMicrophone={vi.fn()} onToggleCamera={vi.fn()}
       onEndAnswer={vi.fn()} onRequestEnd={vi.fn()}
     />);
@@ -43,12 +45,36 @@ describe('interview room', () => {
     expect(html).not.toContain('确定结束这场面试？');
   });
 
+  it('disables and announces the answer action while submission is in flight', () => {
+    const html = renderToStaticMarkup(<Controls
+      microphoneOn cameraOn answerSubmission="submitting"
+      onToggleMicrophone={vi.fn()} onToggleCamera={vi.fn()}
+      onEndAnswer={vi.fn()} onRequestEnd={vi.fn()}
+    />);
+
+    expect(html).toContain('正在提交…');
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('disabled');
+  });
+
+  it('offers an enabled retry after answer submission fails', () => {
+    const html = renderToStaticMarkup(<Controls
+      microphoneOn cameraOn answerSubmission="failed"
+      onToggleMicrophone={vi.fn()} onToggleCamera={vi.fn()}
+      onEndAnswer={vi.fn()} onRequestEnd={vi.fn()}
+    />);
+
+    expect(html).toContain('重新提交回答');
+    expect(html).not.toContain('disabled');
+  });
+
   it('keeps the room visible with a retryable ending error', () => {
     const html = renderToStaticMarkup(<InterviewRoom
       state="listening"
       elapsedMs={0}
       currentQuestion={null}
       error={null}
+      answerSubmission="idle"
       candidateStream={null}
       endDialogOpen
       ending={false}
@@ -68,6 +94,7 @@ describe('interview room', () => {
   it('uses the compact navigation safe exit while an interview is in progress', () => {
     const html = renderToStaticMarkup(<InterviewRoom
       state="listening" elapsedMs={0} currentQuestion={null} error={null} candidateStream={null}
+      answerSubmission="idle"
       endDialogOpen={false} ending={false} endError={null}
       onEndAnswer={vi.fn()} onRetry={vi.fn()} onRequestEnd={vi.fn()} onCancelEnd={vi.fn()} onEndInterview={vi.fn()}
     />);

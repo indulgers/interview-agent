@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { SessionState } from '../../modules/interview-session/types';
+import type { InterviewSessionView, SessionState } from '../../modules/interview-session/types';
 import { Controls } from './Controls';
 import { EndInterviewDialog } from './EndInterviewDialog';
 import { InterviewerPortrait } from './InterviewerPortrait';
@@ -18,11 +18,12 @@ function formatTime(ms: number) {
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
-export function InterviewRoom({ state, elapsedMs, currentQuestion, error, candidateStream, endDialogOpen, ending, endError, onEndAnswer, onRetry, onRequestEnd, onCancelEnd, onEndInterview }: {
+export function InterviewRoom({ state, elapsedMs, currentQuestion, error, answerSubmission, candidateStream, endDialogOpen, ending, endError, onEndAnswer, onRetry, onRequestEnd, onCancelEnd, onEndInterview }: {
   state: SessionState;
   elapsedMs: number;
   currentQuestion: string | null;
   error: string | null;
+  answerSubmission: InterviewSessionView['answerSubmission'];
   candidateStream: MediaStream | null;
   endDialogOpen: boolean;
   ending: boolean;
@@ -58,7 +59,7 @@ export function InterviewRoom({ state, elapsedMs, currentQuestion, error, candid
         <section className="room-info-card room-info-card--status"><p>当前状态</p><strong>{stateCopy[state]}</strong><span>{microphoneOn ? '麦克风已开启' : '麦克风已关闭'}</span></section>
       </aside>
     </section>
-    <Controls microphoneOn={microphoneOn} cameraOn={cameraOn}
+    <Controls microphoneOn={microphoneOn} cameraOn={cameraOn} answerSubmission={answerSubmission}
       onToggleMicrophone={() => { toggle('audio', microphoneOn); setMicrophoneOn(!microphoneOn); }}
       onToggleCamera={() => { toggle('video', cameraOn); setCameraOn(!cameraOn); }}
       onEndAnswer={onEndAnswer} onRequestEnd={(trigger) => { setEndTrigger(trigger); onRequestEnd(); }} />

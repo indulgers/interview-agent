@@ -66,6 +66,7 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
   let responseHint = false;
   let answerSubmission: InterviewSessionView['answerSubmission'] = 'idle';
   let answerSubmissionPromise: Promise<void> | null = null;
+  let answerSubmissionToken: symbol | null = null;
   let currentQuestion: string | null = null;
   let allowNewTopics = true;
   let epoch = 0;
@@ -118,6 +119,7 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
 
   const invalidateAnswerSubmission = () => {
     answerSubmissionPromise = null;
+    answerSubmissionToken = null;
     answerSubmission = 'idle';
   };
 
@@ -426,25 +428,35 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
       if (answerSubmissionPromise) return answerSubmissionPromise;
       if (!connection || state !== 'listening') {
         answerSubmission = 'failed';
+        error = '回答提交失败，请重试。';
         return Promise.reject(new Error('语音连接尚未就绪。'));
       }
 
       answerSubmission = 'submitting';
+      error = null;
       const target = connection;
       const token = epoch;
-      let submission!: Promise<void>;
-      submission = (async () => {
+      const submissionToken = Symbol('answer submission');
+      answerSubmissionToken = submissionToken;
+      const submission = (async () => {
         try {
           await target.submitAnswer();
-          if (token === epoch && connection === target && answerSubmissionPromise === submission && !result && !finalizing) {
+          if (token === epoch && connection === target && answerSubmissionToken === submissionToken && !result && !finalizing) {
             answerSubmission = 'idle';
+            error = null;
             if (state === 'listening') state = 'thinking';
           }
         } catch (cause) {
-          if (token === epoch && connection === target && answerSubmissionPromise === submission && !result && !finalizing) answerSubmission = 'failed';
+          if (token === epoch && connection === target && answerSubmissionToken === submissionToken && !result && !finalizing) {
+            answerSubmission = 'failed';
+            error = '回答提交失败，请重试。';
+          }
           throw cause;
         } finally {
-          if (answerSubmissionPromise === submission) answerSubmissionPromise = null;
+          if (answerSubmissionToken === submissionToken) {
+            answerSubmissionPromise = null;
+            answerSubmissionToken = null;
+          }
         }
       })();
       answerSubmissionPromise = submission;

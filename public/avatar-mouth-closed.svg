@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-label="AI 面试官">
-  <defs><linearGradient id="s" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#bed5df"/><stop offset="1" stop-color="#728c99"/></linearGradient></defs>
-  <circle cx="160" cy="160" r="154" fill="#142730"/><path d="M76 288c8-55 38-82 84-82s76 27 84 82" fill="#29434d"/><ellipse cx="160" cy="139" rx="72" ry="88" fill="url(#s)"/>
-  <path d="M112 116c14-10 28-11 41-3M168 113c14-7 27-5 39 4" fill="none" stroke="#304650" stroke-width="7" stroke-linecap="round"/><circle cx="134" cy="137" r="6" fill="#13262e"/><circle cx="188" cy="137" r="6" fill="#13262e"/>
-  <path d="M137 177c15 5 31 5 46 0" fill="none" stroke="#4b3434" stroke-width="6" stroke-linecap="round"/>
-</svg>
