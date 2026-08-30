@@ -48,7 +48,7 @@ export interface BailianBrowserDependencies {
 }
 
 export class BailianRealtimeVoice implements RealtimeVoice {
-  constructor(private readonly dependencies: BailianBrowserDependencies, private readonly voice = 'Tina') {}
+  constructor(private readonly dependencies: BailianBrowserDependencies, private readonly voice = 'Ethan') {}
 
   async connect(input: RealtimeConnectInput): Promise<RealtimeConnection> {
     let peer: BailianPeerConnection | undefined;
@@ -113,7 +113,7 @@ export class BailianRealtimeVoice implements RealtimeVoice {
 }
 
 /** Creates the production browser boundary; tests should inject their own boundaries instead. */
-export function createBrowserBailianRealtimeVoice(voice = 'Tina', mediaStream?: MediaStream) {
+export function createBrowserBailianRealtimeVoice(voice = 'Ethan', mediaStream?: MediaStream) {
   return new BailianRealtimeVoice({
     createPeerConnection: () => new RTCPeerConnection() as unknown as BailianPeerConnection,
     getUserMedia: (constraints) => mediaStream
@@ -284,6 +284,14 @@ class BailianRealtimeConnection implements RealtimeConnection {
       () => { if (this.answerSubmissionPromise === submission) this.answerSubmissionPromise = undefined; },
     );
     return submission;
+  }
+
+  async beginInterview() {
+    await this.raceClose(this.eventTail);
+    if (this.unavailable) throw connectionUnavailable();
+    this.send({ event_id: eventId(this.dependencies.now()), type: 'response.create' });
+    this.awaitingResponse = true;
+    this.responseCancellationSent = false;
   }
 
   private async submitCurrentAnswer() {

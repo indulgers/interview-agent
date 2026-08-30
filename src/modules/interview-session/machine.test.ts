@@ -8,6 +8,7 @@ import { createDatabase, closeDatabase, migrateDatabase } from '../../db/client'
 import { createInterviewHistory } from '../interview-history/history';
 import type { InterviewHistory, StartSession, FinalTurn } from '../interview-history/types';
 import { MemoryRealtimeVoice } from '../realtime-voice/memory-realtime-voice';
+import type { RealtimeConnectInput } from '../realtime-voice/port';
 import type { Clock, Scheduler } from './types';
 import { createInterviewSession } from './machine';
 
@@ -94,7 +95,31 @@ async function started() {
   return { time, history, voice, session };
 }
 
+class OpeningRealtimeVoice extends MemoryRealtimeVoice {
+  openingRequestCount = 0;
+
+  override async connect(input: RealtimeConnectInput) {
+    const connection = await super.connect(input);
+    return Object.assign(connection, {
+      beginInterview: async () => { this.openingRequestCount++; },
+    });
+  }
+}
+
 describe('InterviewSession', () => {
+  it('starts the interviewer opening exactly once after the session has been persisted', async () => {
+    const time = new FakeTime();
+    const history = new MemoryHistory();
+    const voice = new OpeningRealtimeVoice();
+    const session = createInterviewSession({ clock: time, scheduler: time, history, voice, snapshot: createContentSnapshot() });
+
+    await session.start({ microphone: true, camera: true });
+
+    expect(history.starts).toHaveLength(1);
+    expect(voice.openingRequestCount).toBe(1);
+    expect(session.view().state).toBe('thinking');
+  });
+
   it('serializes burst final events against the real SQLite history sequence invariant', async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'session-burst-'));
     const handle = createDatabase(path.join(directory, 'history.sqlite')); migrateDatabase(handle);

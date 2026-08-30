@@ -287,7 +287,7 @@ describe('BailianRealtimeVoice', () => {
     expect(JSON.parse(peer.outbound.sent[0]!)).toMatchObject({
       type: 'session.update',
       session: {
-        model: 'qwen3.5-omni-flash-realtime', modalities: ['text', 'audio'], voice: 'Tina', instructions: '只问一个技术问题。',
+        model: 'qwen3.5-omni-flash-realtime', modalities: ['text', 'audio'], voice: 'Ethan', instructions: '只问一个技术问题。',
         input_audio_format: 'pcm', output_audio_format: 'pcm',
         input_audio_transcription: { model: 'qwen3-asr-flash-realtime' },
         turn_detection: null,

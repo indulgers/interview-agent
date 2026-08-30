@@ -409,7 +409,12 @@ export function createInterviewSession(deps: InterviewSessionDependencies): Inte
         unsubscribe = next.subscribe((event) => enqueue(async () => {
           if (token === epoch && !result && !finalizing) await onEvent(event);
         }));
-        state = 'listening';
+        if (next.beginInterview) {
+          state = 'thinking';
+          await next.beginInterview();
+        } else {
+          state = 'listening';
+        }
         resume();
       } catch (cause) {
         if (state === 'connecting') state = 'ready';
