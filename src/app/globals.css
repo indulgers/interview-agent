@@ -107,7 +107,8 @@ h1, h2, h3 { letter-spacing: -.035em; }
 .interviewer-portrait__layer--leaving { animation: portrait-crossfade-out 200ms ease both; }
 .interviewer-portrait__image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .interviewer-portrait__image--speaking-base { animation: portrait-speak-base 1.8s ease-in-out infinite alternate; }
-.interviewer-portrait__placeholder { position: absolute; inset: 0; background: linear-gradient(145deg, #dce9e5, #f4f7f7); }
+.interviewer-portrait__placeholder { position: absolute; inset: 0; display: grid; place-items: center; background: linear-gradient(145deg, #dce9e5, #f4f7f7); color: var(--muted); }
+.interviewer-portrait__placeholder span { border-radius: 999px; padding: .55rem .8rem; background: rgb(255 255 255 / 72%); font-size: .78rem; font-weight: 700; }
 .interviewer-portrait figcaption { position: absolute; top: 1rem; left: 1rem; z-index: 2; display: grid; gap: .12rem; border-radius: 13px; padding: .58rem .75rem; background: rgb(20 31 28 / 74%); color: white; backdrop-filter: blur(12px); }
 .interviewer-portrait figcaption strong { font-size: .86rem; }
 .interviewer-portrait figcaption span { color: rgb(255 255 255 / 72%); font-size: .67rem; }

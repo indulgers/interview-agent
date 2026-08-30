@@ -36,6 +36,7 @@ type PortraitFrame = {
   key: string;
   source: string;
   state: SessionState;
+  loaded: boolean;
 };
 
 export type PortraitModel = {
@@ -43,6 +44,9 @@ export type PortraitModel = {
   previous: PortraitFrame | null;
   pending: PortraitFrame | null;
   failedSources: ReadonlySet<string>;
+  failedOverlayKeys: ReadonlySet<string>;
+  placeholderState: SessionState | null;
+  intentState: SessionState;
   nextKey: number;
 };
 
@@ -51,7 +55,7 @@ export type PortraitAction =
   | { type: 'loaded'; key: string }
   | { type: 'settled'; key: string }
   | { type: 'failed'; key: string; source: string }
-  | { type: 'overlay-failed'; source: string };
+  | { type: 'overlay-failed'; key: string; source: string };
 
 export function portraitSourceAfterError(source: string): string | null {
   return source === BASE_PORTRAIT ? null : BASE_PORTRAIT;
@@ -64,58 +68,117 @@ function resolvedSource(state: SessionState, failedSources: ReadonlySet<string>)
   return fallback && !failedSources.has(fallback) ? fallback : null;
 }
 
-function frameFor(state: SessionState, source: string, key: number): PortraitFrame {
-  return { key: `portrait-${key}`, source, state };
+function frameFor(state: SessionState, source: string, key: number, loaded = false): PortraitFrame {
+  return { key: `portrait-${key}`, source, state, loaded };
 }
 
 export function createPortraitModel(state: SessionState): PortraitModel {
   return {
-    current: frameFor(state, portraitByState[state], 0),
+    current: frameFor(state, portraitByState[state], 0, true),
     previous: null,
     pending: null,
     failedSources: new Set(),
+    failedOverlayKeys: new Set(),
+    placeholderState: null,
+    intentState: state,
     nextKey: 1,
   };
 }
 
 export function reducePortraitModel(model: PortraitModel, action: PortraitAction): PortraitModel {
   if (action.type === 'target') {
-    const source = resolvedSource(action.state, model.failedSources);
-    if (!source) return { ...model, pending: null };
-    if (model.current?.source === source) {
-      return { ...model, current: { ...model.current, state: action.state }, pending: null };
+    const source = portraitByState[action.state];
+    if (model.pending?.source === source && model.pending.state === action.state && model.intentState === action.state) return model;
+    const failedSources = new Set<string>();
+    if (model.current?.source === source && !model.failedSources.has(source) && model.placeholderState === null) {
+      return {
+        ...model,
+        current: { ...model.current, state: action.state },
+        pending: null,
+        failedSources,
+        intentState: action.state,
+      };
     }
-    if (model.pending?.source === source) {
-      return { ...model, pending: { ...model.pending, state: action.state } };
-    }
-    return { ...model, pending: frameFor(action.state, source, model.nextKey), nextKey: model.nextKey + 1 };
+    return {
+      ...model,
+      pending: frameFor(action.state, source, model.nextKey),
+      failedSources,
+      placeholderState: model.current ? null : action.state,
+      intentState: action.state,
+      nextKey: model.nextKey + 1,
+    };
   }
 
   if (action.type === 'loaded') {
     if (model.pending?.key !== action.key) return model;
-    return { ...model, previous: model.current, current: model.pending, pending: null };
-  }
-
-  if (action.type === 'settled') {
-    return model.current?.key === action.key ? { ...model, previous: null } : model;
-  }
-
-  const failedSources = new Set(model.failedSources).add(action.source);
-  if (action.type === 'overlay-failed') return { ...model, failedSources };
-
-  if (model.pending?.key === action.key) {
-    const fallback = resolvedSource(model.pending.state, failedSources);
+    if (model.pending.loaded) return model;
+    const loaded = { ...model.pending, loaded: true };
+    if (model.previous) return { ...model, pending: loaded };
     return {
       ...model,
-      failedSources,
-      pending: fallback ? frameFor(model.pending.state, fallback, model.nextKey) : null,
-      nextKey: fallback ? model.nextKey + 1 : model.nextKey,
+      previous: model.current,
+      current: loaded,
+      pending: null,
+      placeholderState: null,
     };
   }
 
-  if (model.current?.key === action.key) {
+  if (action.type === 'settled') {
+    if (!model.previous || model.current?.key !== action.key) return model;
+    if (model.pending?.loaded) {
+      return {
+        ...model,
+        previous: model.current,
+        current: model.pending,
+        pending: null,
+        placeholderState: null,
+      };
+    }
+    return { ...model, previous: null };
+  }
+
+  if (action.type === 'overlay-failed') {
+    const key = action.key;
+    const belongsToNewestFrame = model.current?.key === key || model.pending?.key === key;
+    if (!key || model.intentState !== 'speaking' || !belongsToNewestFrame) return model;
+    return { ...model, failedOverlayKeys: new Set(model.failedOverlayKeys).add(key) };
+  }
+
+  if (model.pending?.key === action.key) {
+    if (model.pending.source !== action.source) return model;
+    const failedSources = new Set(model.failedSources).add(action.source);
+    const fallback = resolvedSource(model.pending.state, failedSources);
+    if (!fallback) {
+      return {
+        ...model,
+        current: null,
+        previous: null,
+        pending: null,
+        failedSources,
+        placeholderState: model.pending.state,
+      };
+    }
+    return {
+      ...model,
+      failedSources,
+      pending: frameFor(model.pending.state, fallback, model.nextKey),
+      nextKey: model.nextKey + 1,
+    };
+  }
+
+  if (!model.pending && model.current?.key === action.key && model.current.source === action.source) {
+    const failedSources = new Set(model.failedSources).add(action.source);
     const fallback = resolvedSource(model.current.state, failedSources);
-    if (!fallback) return { ...model, current: null, previous: null, pending: null, failedSources };
+    if (!fallback) {
+      return {
+        ...model,
+        current: null,
+        previous: null,
+        pending: null,
+        failedSources,
+        placeholderState: model.current.state,
+      };
+    }
     return {
       ...model,
       failedSources,
@@ -124,7 +187,7 @@ export function reducePortraitModel(model: PortraitModel, action: PortraitAction
     };
   }
 
-  return { ...model, failedSources };
+  return model;
 }
 
 export function InterviewerPortrait({ state }: { state: SessionState }) {
@@ -161,7 +224,7 @@ export function InterviewerPortrait({ state }: { state: SessionState }) {
         onLoad={() => { if (role === 'pending') dispatch({ type: 'loaded', key: frame.key }); }}
         onError={() => dispatch({ type: 'failed', key: frame.key, source: frame.source })}
       />
-      {speaking && !model.failedSources.has(BASE_PORTRAIT) && <Image
+      {speaking && !model.failedOverlayKeys.has(frame.key) && <Image
         className="interviewer-portrait__image interviewer-portrait__image--speaking-base"
         src={BASE_PORTRAIT}
         width={1600}
@@ -169,7 +232,7 @@ export function InterviewerPortrait({ state }: { state: SessionState }) {
         sizes="(max-width: 700px) 100vw, (max-width: 1100px) 68vw, 72vw"
         unoptimized
         alt=""
-        onError={() => dispatch({ type: 'overlay-failed', source: BASE_PORTRAIT })}
+        onError={() => dispatch({ type: 'overlay-failed', key: frame.key, source: BASE_PORTRAIT })}
       />}
     </div>;
   };
@@ -177,7 +240,7 @@ export function InterviewerPortrait({ state }: { state: SessionState }) {
   return <figure className="interviewer-portrait interviewer-portrait--motion-safe">
     <div className="interviewer-portrait__media">
       {model.previous && renderFrame(model.previous, 'previous')}
-      {model.current ? renderFrame(model.current, 'current') : <div className="interviewer-portrait__placeholder" role="img" aria-label={labelByState[state]} />}
+      {model.current ? renderFrame(model.current, 'current') : <div className="interviewer-portrait__placeholder" role="img" aria-label={`${labelByState[model.placeholderState ?? state]}，面试官画面暂时不可用`}><span>面试官画面暂时不可用</span></div>}
       {model.pending && renderFrame(model.pending, 'pending')}
     </div>
     <figcaption><strong>张老师</strong><span>AI 技术面试官</span></figcaption>

@@ -1,3 +1,4 @@
+import { Children, isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -37,6 +38,7 @@ describe('interview room', () => {
     const html = renderToStaticMarkup(<Controls
       microphoneOn cameraOn
       answerSubmission="idle"
+      canSubmitAnswer
       onToggleMicrophone={vi.fn()} onToggleCamera={vi.fn()}
       onEndAnswer={vi.fn()} onRequestEnd={vi.fn()}
     />);
@@ -47,7 +49,7 @@ describe('interview room', () => {
 
   it('disables and announces the answer action while submission is in flight', () => {
     const html = renderToStaticMarkup(<Controls
-      microphoneOn cameraOn answerSubmission="submitting"
+      microphoneOn cameraOn answerSubmission="submitting" canSubmitAnswer
       onToggleMicrophone={vi.fn()} onToggleCamera={vi.fn()}
       onEndAnswer={vi.fn()} onRequestEnd={vi.fn()}
     />);
@@ -59,13 +61,47 @@ describe('interview room', () => {
 
   it('offers an enabled retry after answer submission fails', () => {
     const html = renderToStaticMarkup(<Controls
-      microphoneOn cameraOn answerSubmission="failed"
+      microphoneOn cameraOn answerSubmission="failed" canSubmitAnswer
       onToggleMicrophone={vi.fn()} onToggleCamera={vi.fn()}
       onEndAnswer={vi.fn()} onRequestEnd={vi.fn()}
     />);
 
     expect(html).toContain('重新提交回答');
     expect(html).not.toContain('disabled');
+  });
+
+  it.each(['thinking', 'speaking', 'reconnecting', 'paused', 'closing'] as const)('disables answer submission without retry semantics while %s', (state) => {
+    const onEndAnswer = vi.fn();
+    const html = renderToStaticMarkup(<InterviewRoom
+      state={state} elapsedMs={0} currentQuestion={null} error={null} candidateStream={null}
+      answerSubmission="failed"
+      endDialogOpen={false} ending={false} endError={null}
+      onEndAnswer={onEndAnswer} onRetry={vi.fn()} onRequestEnd={vi.fn()} onCancelEnd={vi.fn()} onEndInterview={vi.fn()}
+    />);
+
+    expect(html).toMatch(/class="answer-button"[^>]*disabled[^>]*>我回答完了<\/button>/);
+    expect(html).not.toContain('重新提交回答');
+  });
+
+  it.each(['thinking', 'speaking', 'reconnecting', 'paused', 'closing'] as const)('does not invoke answer submission from the disabled %s control', () => {
+    const onEndAnswer = vi.fn();
+    const controls = Controls({
+      microphoneOn: true,
+      cameraOn: true,
+      answerSubmission: 'failed',
+      canSubmitAnswer: false,
+      onToggleMicrophone: vi.fn(),
+      onToggleCamera: vi.fn(),
+      onEndAnswer,
+      onRequestEnd: vi.fn(),
+    }) as ReactElement<{ children: ReactNode }>;
+    const answer = Children.toArray(controls.props.children).find((child) => (
+      isValidElement<{ className?: string }>(child) && child.props.className === 'answer-button'
+    ));
+    if (!isValidElement<{ onClick(): void }>(answer)) throw new Error('answer control missing');
+
+    answer.props.onClick();
+    expect(onEndAnswer).not.toHaveBeenCalled();
   });
 
   it('keeps the room visible with a retryable ending error', () => {

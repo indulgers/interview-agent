@@ -59,6 +59,7 @@ export function InterviewExperience({ snapshot, testMode = false }: { snapshot: 
       setEndError(null);
       try {
         await session.end();
+        setEndDialogOpen(false);
       } catch (cause) {
         setEnding(false);
         setEndError('结束保存失败，请重试。');

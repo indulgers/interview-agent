@@ -59,7 +59,7 @@ export function InterviewRoom({ state, elapsedMs, currentQuestion, error, answer
         <section className="room-info-card room-info-card--status"><p>当前状态</p><strong>{stateCopy[state]}</strong><span>{microphoneOn ? '麦克风已开启' : '麦克风已关闭'}</span></section>
       </aside>
     </section>
-    <Controls microphoneOn={microphoneOn} cameraOn={cameraOn} answerSubmission={answerSubmission}
+    <Controls microphoneOn={microphoneOn} cameraOn={cameraOn} answerSubmission={answerSubmission} canSubmitAnswer={state === 'listening'}
       onToggleMicrophone={() => { toggle('audio', microphoneOn); setMicrophoneOn(!microphoneOn); }}
       onToggleCamera={() => { toggle('video', cameraOn); setCameraOn(!cameraOn); }}
       onEndAnswer={onEndAnswer} onRequestEnd={(trigger) => { setEndTrigger(trigger); onRequestEnd(); }} />
